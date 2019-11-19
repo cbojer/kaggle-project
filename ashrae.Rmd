@@ -1,0 +1,116 @@
+---
+title: "ASHRAE"
+output: html_document
+---
+```{r}
+library(tidyverse)
+library(lubridate)
+library(zeallot)
+library(data.table)
+
+trn <- fread("../ashrae-energy-prediction/train.csv")
+test <- fread("../ashrae-energy-prediction/test.csv")
+
+trn$timestamp <- as_datetime(trn$timestamp)
+trn$building_id <- as.factor(trn$building_id)
+trn$meter <- as.factor(trn$meter)
+
+test$timestamp <- as_datetime(test$timestamp)
+test$building_id <- as.factor(test$building_id)
+test$meter <- as.factor(test$meter)
+
+trn$building_id %>% unique %>% length
+trn$meter %>% unique %>% length
+
+trn %>% distinct(building_id, meter) #2380 time series, 4 meter types, 1449 buildings. Hourly readings of meters!
+```
+
+```{r}
+trn[, .(n_meters = length(unique(meter)), n = .N), by = .(building_id)] %>% 
+  mutate(n = n/24) %>% 
+  gather(key = measure, value = value, n_meters, n) %>%
+  ggplot(aes(x = value)) + geom_histogram() + facet_wrap(~measure, scales = "free")
+
+# Most buildings have one similar amount of data (depending on # of meters), but few outliers (less than full year of data?)
+# Most buildings have one meter, some have 2/3 not many have 4
+```
+
+
+```{r}
+test %>% distinct(building_id, meter) #2380 time series
+setdiff(test$building_id, trn$building_id) #All buildings in both test and train! So same time series in both
+setdiff(trn$building_id, test$building_id)
+```
+
+```{r}
+trn$timestamp %>% min; trn$timestamp %>% max #One year of data
+test$timestamp %>% min; test$timestamp %>% max #Two years of data!!
+```
+
+```{r}
+metad <- fread("../ashrae-energy-prediction/building_metadata.csv") #Many have missing data on floor count, some on year built
+metad$primary_use <- as.factor(metad$primary_use)
+metad$building_id <- as.character(metad$building_id)
+metad %>% summary
+metad
+
+```
+
+```{r}
+weather <- fread("../ashrae-energy-prediction/weather_train.csv") #Note missing data
+weather$timestamp <- as_datetime(weather$timestamp)
+weather %>% summary #many missing values for cloud coverage, precip, some for sea pressure
+```
+
+```{r}
+joined <- merge(trn, metad, all.x = TRUE)
+rm(trn, metad)
+gc()
+
+joined <- merge(joined, weather, by = c("site_id", "timestamp"), all.x = TRUE)
+joined
+```
+
+```{r}
+library(feather)
+write_feather(joined, "../ashrae-energy-prediction/trn_df.feather")
+
+joined
+```
+
+```{r}
+joined %>% 
+  sample_n(1000000) %>% 
+  ggplot(aes(x = meter, y = meter_reading)) + geom_violin(draw_quantiles = c(0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95)) + scale_y_log10()
+```
+
+```{r}
+
+joined %>% 
+  sample_n(1000000) %>% 
+  ggplot(aes(x = building_id, y = meter_reading)) + geom_violin(draw_quantiles = c(0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95)) + scale_y_log10()
+```
+
+```{r}
+library(forcats)
+joined[, .(q10 = quantile(meter_reading, 0.1), q25 = quantile(meter_reading, 0.25), q50 = quantile(meter_reading, 0.5), q75 = quantile(meter_reading, 0.75), q90 = quantile(meter_reading, 0.9)), by = .(building_id)] %>% 
+  gather(key = quantile, value = value, -building_id) %>% 
+  group_by(building_id) %>%
+  mutate(q50 = value*(quantile == "q50")) %>% 
+  ungroup %>% 
+  arrange(desc(q50)) %>% 
+  mutate(building_id = forcats::fct_reorder(building_id, q50)) %>% 
+  ggplot(aes(x = building_id, y = value)) + geom_point(aes(color = as.integer(building_id)), size = 1) + scale_y_log10() + facet_wrap(~quantile) + geom_smooth()
+```
+
+```{r}
+joined[, .(q10 = quantile(meter_reading, 0.1), q25 = quantile(meter_reading, 0.25), q50 = quantile(meter_reading, 0.5), q75 = quantile(meter_reading, 0.75), q90 = quantile(meter_reading, 0.9)), by = .(month(timestamp))] %>% 
+  gather(key = quantile, value = value, -building_id) %>% 
+  group_by(building_id) %>%
+  mutate(q50 = value*(quantile == "q50")) %>% 
+  ungroup %>% 
+  arrange(desc(q50)) %>% 
+  mutate(building_id = forcats::fct_reorder(building_id, q50)) %>% 
+  ggplot(aes(x = building_id, y = value)) + geom_point(aes(color = as.integer(building_id)), size = 1) + scale_y_log10() + facet_wrap(~quantile) + geom_smooth()
+```
+
