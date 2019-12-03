@@ -109,9 +109,12 @@ get_khs_feats <- function(x, fill_na = NULL) {
   lambda <- forecast::BoxCox.lambda(x, lower = 0, upper = 1, method = "loglik")
   y <- forecast::BoxCox(x, lambda)
   stl_feats <- try(tsfeatures::stl_features(y, s.window = "periodic", robust = TRUE))
-  if(any(!c("trend", "seasonal_strength", "e_acf1") %in% names(stl_feats))) {
-    message("Trend, Season, or ACF1 is Missing")
-    message(paste("Available Cols Are:\n", paste0(names(stl_feats), collapse = ", ")))
+  name_check <- !c("trend", "seasonal_strength", "e_acf1") %in% names(stl_feats)
+  if(any(name_check)) {
+    missing_cols <- c("trend", "seasonal_strength", "e_acf1")[name_check]
+    for(col in missing_cols) {
+      stl_feats[col] <- NA
+    }
   }
   if(is.element("try-error", class(stl_feats))) {
     stl_feats <- c("trend" = NA_real_, "seasonal_strength" = NA_real_, "e_acf1" = NA_real_)
