@@ -1,0 +1,237 @@
+---
+title: "R Notebook"
+output: document_md
+---
+
+```{r}
+rm(list = ls())
+source("../Helpers/package_installer.R")
+source("../Helpers/helperFunctions.R")
+package_installer(c("data.table", "lubridate", "magrittr", "e1071", "xgboost", "glmnet"))
+```
+
+```{r}
+train <- fread("data/train.csv")[,-2] %>% janitor::clean_names() %>% setDT() %>% .[, date := lubridate::ymd(date)] %>% .[order(store, date)]
+stores <- fread("data/store.csv") %>% janitor::clean_names() %>% setDT()
+train <- extractDateInfo(train, DATE_COL = "date")
+```
+
+# Add Temporal Information
+## Add Promotion Counters
+```{r}
+# Pull Promotion Information -----
+promo2_stores <- stores[promo2 == 1L, store]
+secondPromo <- stores[promo2 == 1L, .(store, promo2, promo2since_week, promo2since_year, promo_interval)]
+secondPromo <- secondPromo[, .(month = as.integer(month(ymd(paste0("2019-", unlist(strsplit(promo_interval, ",")), "-01"))))), .(store, promo2, promo2since_week, promo2since_year, promo_interval)]
+secondPromo[, promo2_start := as.Date(paste0("1-", promo2since_week, "-", promo2since_year), format = "%u-%U-%Y")]
+
+# Count days before and after secondary promotion -----
+train[secondPromo, on = .(store), promo2_start := promo2_start]
+train[date > promo2_start, promo2_after := abs(as.integer(date - promo2_start)), store][is.na(promo2_after), promo2_after := 0L]
+train[date < promo2_start, promo2_before := abs(as.integer(promo2_start - date)), store][is.na(promo2_before), promo2_before := 0L]
+train[, promo2_start := ifelse(promo2_after == 0L & promo2_before == 0L, 1L, 0L)]
+
+# Generate Cycles for Both Primary and Secondary Promotions -----
+## Primary
+train %>% 
+  .[, promo_cycle := seq_len(.N), by = .(store, rleid(wday(date) == 6 & promo == 1))] %>%
+  .[!(wday(date) == 6 & promo == 1), promo_cycle := promo_cycle + 1L]
+
+## Secondary
+### Add Indicator for cycle of secondary promotion
+train[secondPromo, on = .(store, monthofyear = month, year >= promo2since_year), promo2_cycle_ind := 1L][dayofmonth != 1L & promo2_cycle_ind == 1L, promo2_cycle_ind := 0L]
+
+train %>%
+  .[store %in% promo2_stores, promo2_cycle := seq_len(.N), by = .(store, rleid(promo2_cycle_ind))] %>%
+  .[promo2_start != 1L, promo2_cycle := promo2_cycle + 1L] %>%
+  .[is.na(promo2_cycle), promo2_cycle := 0L]
+
+train[, promo2_cycle_ind := NULL]
+
+# Generate Counter Before, After, and During Counter for Primary Promotions -----
+train %>%
+  .[, promo_counter := seq_len(.N), by = .(store, rleid(promo))]
+
+rm(promo2_stores, secondPromo)
+```
+
+## Add Competition Counters
+```{r}
+# Pull Competition Information -----
+competition <- stores[, .(competition_start = as.Date(paste0("01-", competition_open_since_month, "-", competition_open_since_year), format = "%d-%m-%Y")), .(store)]
+
+# Generate Counter Before and After Competition Stars -----
+train[competition, on = .(store), days_from_competition_start := abs(as.integer(date - competition_start))]
+
+# Indicator for Start of Competition
+train[competition, on = .(store), competition_start := as.integer(date == competition_start)]
+```
+
+## Add Holiday Counters
+```{r}
+# Add Weekends to School Holidays
+train[, adj_school_holiday := addWeekends(school_holiday, date), store]
+
+# Add Counters Before, After and During School Holidays
+train %>%
+  .[, school_holiday_counter := seq_len(.N), by = .(store, rleid(adj_school_holiday))]
+
+# Add Sum of Holidays during Current, Last, and Next Week
+train[, current_week_holidays := sum(state_holiday != "0"), .(store, weekofyear, year(date))]
+train[, last_week_holidays := shift(current_week_holidays, 7L, type = "lag"), store][is.na(last_week_holidays), last_week_holidays := 0L]
+train[, next_week_holidays := shift(current_week_holidays, 7L, type = "lead"), store][is.na(next_week_holidays), next_week_holidays := 0L]
+```
+
+## Add Refurbishment Counter
+```{r}
+# Calculate Number of Consecutive Days where store is closed
+train[, dbs := max(seq_len(.N)), .(store, rleid(open))]
+
+# Add Refurb Indicator
+train[dbs > 6, refurb := 1L][is.na(refurb), refurb := 0L]
+
+# Add Refurb Counter
+train[, refurb_counter := seq_len(.N), .(store, rleid(refurb))]
+
+```
+
+
+```{r}
+t <- train[store %in% 1:10, 1:3]
+t
+```
+
+# Add Recent Features
+```{r}
+centrality <- c("mean", "median", "harmonic_mean")
+spread <- c("sd", "skewness", "kurtosis", "q10", "q90")
+# Recent Features by Sales
+train[store %in% 1:50, paste("sales_quarter", c(centrality, spread), sep = "_") := train[store %in% 1:50][.(store=store, start_date = last_date(date, 3L, "month"), end_date = date), on=.(store, date >= start_date, date <= end_date),
+                                                                                                          lapply(c(centrality, spread), function(f) as.double(get(f)(sales))), by = .EACHI][, !(1:3)]]
+
+ts_apply <- function(DT, COI, FUN, DATE_COL, GRP_COL = NULL, n = 1L, unit = c("day", "week", "month", "year"), ...) {
+  require(data.table)
+  
+  unit <- match.arg(unit)
+  
+  # Copy input data to avoid in-place modification
+  DT_in <- copy(setDT(DT))
+  
+  # Set static names for columns of interest
+  if (!is.null(GRP_COL)) {
+    setnames(DT_in, 
+             c(COI, DATE_COL, GRP_COL),
+             c("TARGET", "DATE", "GROUP"))
+    
+    # Apply function
+    DT_out <- DT_in[.(GROUP=GROUP, start_date = last_date(DATE, n, unit), end_date = DATE), on=.(GROUP, DATE >= start_date, DATE <= end_date),
+                    lapply(FUN, function(f) as.double(get(f)(TARGET, ...))), by = .EACHI][, !(1:3)]
+  } else {
+    setnames(DT_in, 
+             c(COI, DATE_COL),
+             c("TARGET", "DATE"))
+    
+    DT_in[, ID := 1L]
+    
+    # Apply function
+    DT_out <- DT_in[.(ID = 1L, start_date = last_date(DATE, n, unit), end_date = DATE), on=.(ID, DATE >= start_date, DATE <= end_date),
+                    lapply(FUN, function(f) as.double(get(f)(TARGET, ...))), by = .EACHI][, !(1:3)]
+  }
+  
+  DT_out
+}
+
+tic()
+t[, paste("sales_quarter", c(centrality, spread), sep = "_") := ts_apply(t, "sales", c(centrality, spread), "date", "store", 3L, "month")]
+toc()
+
+tic()
+t[, paste("sales_quarter", c(centrality, spread), sep = "_") := t[.(store=store, start_date = last_date(date, 3L, "month"), end_date = date), on=.(store, date >= start_date, date <= end_date),
+                                                                  lapply(c(centrality, spread), function(f) as.double(get(f)(sales))), by = .EACHI][, !(1:3)]]
+toc()
+
+t[, paste("sales_halfyear", c(centrality, spread), sep = "_") := ts_apply(t, "sales", c(centrality, spread), "date", "store", 6L, "month")]
+t[, paste("sales_year", c(centrality, spread), sep = "_") := ts_apply(t, "sales", c(centrality, spread), "date", "store", 1L, "year")]
+t[, paste("sales_twoyear", c(centrality, spread), sep = "_") := ts_apply(t, "sales", c(centrality, spread), "date", "store", 2L, "year")]
+
+
+last_date_fixed <- function(x, n = 1, unit = c("day", "week", "month", "year")) {
+  require(lubridate)
+  
+  # Stop function if x is not Class Date.
+  if(!is.Date(x)) stop("x is not class: Date")
+  if(any(is.na(x))) stop("x contains NA")
+  
+  # Match unit and Perform Calculation
+  unit <- match.arg(unit)
+  result <- switch(unit,
+                   day = as.integer(x - (x - n)),
+                   week = as.integer(x - x - (7L*n)),
+                   month = as.integer(x - (x %m-% months(n))),
+                   year = as.integer(x - (x %m-% months(12L*n))))
+  
+  as.integer(round(mean(result), 0))
+  
+}
+
+last_date_fixed(t[store == 1]$date, n = 2L, "year")
+
+tic()
+microbenchmark::microbenchmark(
+  t[, paste("sales_quarter", c(centrality, spread), sep = "_") := ts_apply(t, "sales", c(centrality, spread), "date", "store", 3L, "month")],
+  t[t[, .(date=seq(min(date), max(date), by="1 day")), store], on=.(store, date)][,
+                                                                                paste("sales_twoyear", c(centrality, spread), sep = "_") := lapply(c(centrality, spread), function(f) frollapply(sales, last_date_fixed(date, n = 3L, "month"), f, na.rm=TRUE))],
+  times = 10
+)
+t[t[, .(date=seq(min(date), max(date), by="1 day")), store], on=.(store, date)][,
+                                                                                paste("sales_twoyear", c(centrality, spread), sep = "_") := lapply(c(centrality, spread), function(f) frollapply(sales, last_date_fixed(date, n = 3L, "month"), f, na.rm=TRUE))]
+toc()
+
+library(RcppRoll)
+
+
+ttroll <- rollit
+
+t[open == 1, paste("sales_halfyear", c(centrality, spread), sep = "_") := lapply(c(centrality, spread), function(x) ts_rollapply(sales, date, x, n = 6, unit = "month", na.rm = T))]
+t[open == 1, paste("sales_year", c(centrality, spread), sep = "_") := lapply(c(centrality, spread), function(x) ts_rollapply(sales, date, x, n = 1, unit = "year", na.rm = T))]
+t[open == 1, paste("sales_twoyear", c(centrality, spread), sep = "_") := lapply(c(centrality, spread), function(x) ts_rollapply(sales, date, x, n = 2, unit = "year", na.rm = T))]
+# Recent Features by Customer
+t[open == 1, paste("customers_quarter", c(centrality, spread), sep = "_") := lapply(c(centrality, spread), function(x) ts_rollapply(customers, date, x, n = 3, unit = "month", na.rm = T))]
+t[open == 1, paste("customers_halfyear", c(centrality, spread), sep = "_") := lapply(c(centrality, spread), function(x) ts_rollapply(customers, date, x, n = 6, unit = "month", na.rm = T))]
+t[open == 1, paste("customers_year", c(centrality, spread), sep = "_") := lapply(c(centrality, spread), function(x) ts_rollapply(customers, date, x, n = 1, unit = "year", na.rm = T))]
+t[open == 1, paste("customers_twoyear", c(centrality, spread), sep = "_") := lapply(c(centrality, spread), function(x) ts_rollapply(customers, date, x, n = 2, unit = "year", na.rm = T))]
+
+# Fill NA's when stores are closed
+na_cols <- names(t)[sapply(t, function(x) any(is.na(x)))]
+t[, (na_cols) := lapply(.SD, nafill, type = "locf"), .SDcols = na_cols]
+sd(t$sales)
+
+seq(ymd("2019-01-01"), by = "day", length.out = 100)
+DT <- data.table(store = rep(1:10, each = 1000),
+                 sales = rnorm(n = 10000, mean = 4500, sd = 2500),
+                 date = rep(seq(ymd("2015-01-01"), by = "day", length.out = 1000), 10))
+
+
+```
+
+```{r}
+
+
+
+
+library(profvis)
+
+profvis(t[open == 1, paste("sales_quarter", c(centrality, spread), sep = "_") := lapply(c(centrality, spread), function(x) ts_rollapply(sales, date, x, n = 3L, unit = "month", na.rm = T)), store])
+profvis(t[, .(fadaptiveapply(sales, date, "harmonic_mean", n = 3L, "month", na.rm = T))])
+
+all.equal(t[, .(fadaptiveapply(sales, date, "harmonic_mean", n = 3L, "month", na.rm = T))][90:942],
+          t[, .(ts_rollapply(sales, date, "harmonic_mean", n = 3L, "month", na.rm = T))][90:942])
+```
+
+
+
+```{r}
+valid_date <- max(train$date) - weeks(6)
+valid <- train[date >= valid_date]
+train <- train[date < valid_date]
+```

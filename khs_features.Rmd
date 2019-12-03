@@ -1,0 +1,262 @@
+---
+title: "R Notebook"
+output: document_md
+---
+
+# Initilization
+```{r, message=FALSE, warning=FALSE}
+## Clear Environment & Load Packages
+rm(list = ls()) ; gc()
+library(magrittr)
+library(lubridate)
+library(data.table)
+library(tsfeatures)
+library(purrr)
+library(furrr)
+library(ggfortify)
+library(tidyverse)
+library(forecast)
+
+## Source Functions
+source("R/utils.R")
+source("R/prepdata.R")
+source("R/svd.R")
+```
+
+```{r}
+data_dirs <- paste0(list.dirs("../Data")[-c(1,2)], "/combined.RDS")
+train_dirs <- list.files("./Cache/train_data", full.names = T)
+ids <- sapply(data_dirs, get_id)
+
+data_info <- tribble(
+  ~id,    ~data_dir,    ~train_dir,    ~group,                      ~target,         ~index,       ~ts_frequency,
+  ids[1], data_dirs[1], train_dirs[1], c("store_nbr", "item_nbr"),  "unit_sales",    "date",       c(365.25),
+  ids[2], data_dirs[2], train_dirs[2], c("air_store_id"),           "visitors",      "visit_date", c(365.25),
+  ids[3], data_dirs[3], train_dirs[3], c("store"),                  "sales",         "date",       c(365.25),
+  ids[4], data_dirs[4], train_dirs[4], c("store", "dept"),          "weekly_sales",  "date",       c(365.25/7),
+  ids[5], data_dirs[5], train_dirs[5], c("store_nbr", "item_nbr"),  "units",         "date",       c(365.25),
+  ids[6], data_dirs[6], train_dirs[6], c("page"),                   "views",         "date",       c(365.25)
+)       
+
+```
+
+# Capture and prepare training data
+```{r, eval = FALSE}
+# favorita-grocery-sales-forecasting
+idx <- 1
+path <- paste0(data_dirs[idx], "/combined.rds")
+raw_data <- readRDS(path)
+original_train <- raw_data$train %>% janitor::clean_names()
+train <- as_dtts(original_train, group = data_info$group[[idx]], target = data_info$target[[idx]], index = data_info$index[[idx]], "train")
+rm(raw_data, original_train) ; gc()
+train[, c(attr(train, "self")$index) := parVec(x = get(attr(train, "self")$index), FUN = anytime::anydate)]
+save_path <- paste0("Cache/train_data/", get_id(path), ".RDS")
+saveRDS(train, save_path)
+rm(train) ; gc()
+
+# recruit-restaurant-visitor-forecasting
+idx <- 2
+path <- paste0(data_dirs[idx], "/combined.rds")
+raw_data <- readRDS(path)
+original_train <- raw_data$air_visit_data %>% janitor::clean_names()
+train <- as_dtts(original_train, group = data_info$group[[idx]], target = data_info$target[[idx]], index = data_info$index[[idx]], "train")
+rm(raw_data, original_train) ; gc()
+train[, c(attr(train, "self")$index) := parVec(x = get(attr(train, "self")$index), FUN = anytime::anydate)]
+save_path <- paste0("Cache/train_data/", get_id(path), ".RDS")
+saveRDS(train, save_path)
+rm(train) ; gc()
+
+# rossmann-store-sales
+idx <- 3
+path <- paste0(data_dirs[idx], "/combined.rds")
+raw_data <- readRDS(path)
+original_train <- raw_data$train %>% janitor::clean_names()
+train <- as_dtts(original_train, group = data_info$group[[idx]], target = data_info$target[[idx]], index = data_info$index[[idx]], "train")
+rm(raw_data, original_train) ; gc()
+train[, c(attr(train, "self")$index) := parVec(x = get(attr(train, "self")$index), FUN = anytime::anydate)]
+save_path <- paste0("Cache/train_data/", get_id(path), ".RDS")
+saveRDS(train, save_path)
+rm(train) ; gc()
+
+# walmart-recruiting-store-sales-forecasting
+idx <- 4
+path <- paste0(data_dirs[idx], "/combined.rds")
+raw_data <- readRDS(path)
+original_train <- raw_data$train %>% janitor::clean_names()
+train <- as_dtts(original_train, group = data_info$group[[idx]], target = data_info$target[[idx]], index = data_info$index[[idx]], "train")
+rm(raw_data, original_train) ; gc()
+train[, c(attr(train, "self")$index) := parVec(x = get(attr(train, "self")$index), FUN = anytime::anydate)]
+save_path <- paste0("Cache/train_data/", get_id(path), ".RDS")
+saveRDS(train, save_path)
+rm(train) ; gc()
+
+# walmart-storm-weather-competition
+idx <- 5
+path <- paste0(data_dirs[idx])
+raw_data <- readRDS(path)
+original_train <- raw_data$train %>% janitor::clean_names()
+train <- as_dtts(original_train, group = data_info$group[[idx]], target = data_info$target[[idx]], index = data_info$index[[idx]], "train")
+rm(raw_data, original_train) ; gc()
+train[, c(attr(train, "self")$index) := parVec(x = get(attr(train, "self")$index), FUN = anytime::anydate)]
+save_path <- paste0("Cache/train_data/", get_id(path), ".RDS")
+saveRDS(train, save_path)
+rm(train) ; gc()
+
+# web-traffic-time-series-forecasting
+idx <- 6
+path <- paste0(data_dirs[idx], "/combined.rds")
+raw_data <- readRDS(path)
+train1 <- melt(raw_data$train_1, id.vars = "Page", variable.name = "date", variable.factor = F, na.rm = TRUE, value.name = "views", verbose = T)
+train2 <- melt(raw_data$train_2, id.vars = "Page", variable.name = "date", variable.factor = F, na.rm = TRUE, value.name = "views", verbose = T)
+original_train <- rbind(train11, train22) %>% janitor::clean_names()
+train <- as_dtts(original_train, group = data_info$group[[idx]], target = data_info$target[[idx]], index = data_info$index[[idx]], "train")
+rm(raw_data, original_train) ; gc()
+train[, views := as.integer(views)]
+train[, page := as.factor(page)]
+train[, c(attr(train, "self")$index) := parVec(x = get(attr(train, "self")$index), FUN = anytime::anydate)]
+save_path <- paste0("Cache/train_data/", get_id(path), ".RDS")
+saveRDS(train, save_path)
+rm(train) ; gc()
+
+```
+
+# Extract Kang, Hyndman, Smith Features
+```{r}
+# favorita-grocery-sales-forecasting
+idx <- 1
+path <- data_info$train_dir[[idx]]
+train <- readRDS(path)
+train[is.na(get(data_info$target[[idx]])), c(data_info$target[[idx]]) := 0]
+train[get(data_info$target[[idx]]) < 0, c(data_info$target[[idx]]) := 0]
+setkeyv(train, data_info$group[[idx]])
+setindexv(train, data_info$index[[idx]])
+
+tictoc::tic("Collect Time Series Features")
+khs_feats <- khs_ts_features(.data = train,
+                             target = data_info$target[[idx]],
+                             group = data_info$group[[idx]],
+                             index = data_info$index[[idx]],
+                             frequency = data_info$ts_frequency[[idx]],
+                             parallel = T)
+tictoc::toc()
+
+saveRDS(cbind(id = data_info$id[[idx]], khs_feats), paste0("./Results/khs_features/", data_info$id[[idx]], ".rds"))
+rm(train, khs_feats) ; gc()
+
+# recruit-restaurant-visitor-forecasting ----->>>> MANGLER
+idx <- 2
+path <- data_info$train_dir[[idx]]
+train <- readRDS(path)
+train[is.na(get(data_info$target[[idx]])), c(data_info$target[[idx]]) := 0]
+train[get(data_info$target[[idx]]) < 0, c(data_info$target[[idx]]) := 0]
+setkeyv(train, data_info$group[[idx]])
+setindexv(train, data_info$index[[idx]])
+
+tictoc::tic("Collect Time Series Features")
+khs_feats <- khs_ts_features(.data = train,
+                             target = data_info$target[[idx]],
+                             group = data_info$group[[idx]],
+                             index = data_info$index[[idx]],
+                             frequency = data_info$ts_frequency[[idx]],
+                             parallel = T)
+tictoc::toc()
+
+saveRDS(cbind(id = data_info$id[[idx]], khs_feats), paste0("./Results/khs_features/", data_info$id[[idx]], ".rds"))
+rm(train, khs_feats) ; gc()
+
+# rossmann-store-sales
+idx <- 3
+path <- data_info$train_dir[[idx]]
+train <- readRDS(path)
+train[is.na(get(data_info$target[[idx]])), c(data_info$target[[idx]]) := 0]
+train[get(data_info$target[[idx]]) < 0, c(data_info$target[[idx]]) := 0]
+setkeyv(train, data_info$group[[idx]])
+setindexv(train, data_info$index[[idx]])
+
+tictoc::tic("Collect Time Series Features")
+khs_feats <- khs_ts_features(.data = train,
+                             target = data_info$target[[idx]],
+                             group = data_info$group[[idx]],
+                             index = data_info$index[[idx]],
+                             frequency = data_info$ts_frequency[[idx]],
+                             parallel = T)
+tictoc::toc()
+
+saveRDS(cbind(id = data_info$id[[idx]], khs_feats), paste0("./Results/khs_features/", data_info$id[[idx]], ".rds"))
+rm(train, khs_feats)
+
+# walmart-recruiting-store-sales-forecasting
+idx <- 4
+path <- data_info$train_dir[[idx]]
+train <- readRDS(path)
+train[is.na(get(data_info$target[[idx]])), c(data_info$target[[idx]]) := 0]
+train[get(data_info$target[[idx]]) < 0, c(data_info$target[[idx]]) := 0]
+setkeyv(train, data_info$group[[idx]])
+setindexv(train, data_info$index[[idx]])
+
+tictoc::tic("Collect Time Series Features")
+khs_feats <- khs_ts_features(.data = train,
+                             target = data_info$target[[idx]],
+                             group = data_info$group[[idx]],
+                             index = data_info$index[[idx]],
+                             frequency = data_info$ts_frequency[[idx]],
+                             parallel = T)
+tictoc::toc()
+
+saveRDS(cbind(id = data_info$id[[idx]], khs_feats), paste0("./Results/khs_features/", data_info$id[[idx]], ".rds"))
+rm(train, khs_feats) ; gc()
+
+# walmart-storm-weather-competition
+idx <- 5
+path <- data_info$train_dir[[idx]]
+train <- readRDS(path)
+train[is.na(get(data_info$target[[idx]])), c(data_info$target[[idx]]) := 0]
+train[get(data_info$target[[idx]]) < 0, c(data_info$target[[idx]]) := 0]
+setkeyv(train, data_info$group[[idx]])
+setindexv(train, data_info$index[[idx]])
+
+tictoc::tic("Collect Time Series Features")
+khs_feats <- khs_ts_features(.data = train,
+                             target = data_info$target[[idx]],
+                             group = data_info$group[[idx]],
+                             index = data_info$index[[idx]],
+                             frequency = data_info$ts_frequency[[idx]],
+                             parallel = T)
+tictoc::toc()
+
+saveRDS(cbind(id = data_info$id[[idx]], khs_feats), paste0("./Results/khs_features/", data_info$id[[idx]], ".rds"))
+rm(train, khs_feats) ; gc()
+
+# web-traffic-time-series-forecasting
+# walmart-storm-weather-competition
+idx <- 6
+path <- data_info$train_dir[[idx]]
+train <- readRDS(path)
+train[is.na(get(data_info$target[[idx]])), c(data_info$target[[idx]]) := 0]
+train[get(data_info$target[[idx]]) < 0, c(data_info$target[[idx]]) := 0]
+setkeyv(train, data_info$group[[idx]])
+setindexv(train, data_info$index[[idx]])
+
+tictoc::tic("Collect Time Series Features")
+khs_feats <- khs_ts_features(.data = train,
+                             target = data_info$target[[idx]],
+                             group = data_info$group[[idx]],
+                             index = data_info$index[[idx]],
+                             frequency = data_info$ts_frequency[[idx]],
+                             parallel = T)
+tictoc::toc()
+
+saveRDS(cbind(id = data_info$id[[idx]], khs_feats), paste0("./Results/khs_features/", data_info$id[[idx]], ".rds"))
+rm(train, khs_feats) ; gc()
+
+```
+
+
+
+
+
+```{r}
+
+
+
+```

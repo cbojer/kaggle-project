@@ -1,0 +1,444 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# Setup
+```{r}
+library(tidyverse)
+library(lubridate)
+library(readxl)
+library(data.table)
+library(tsibble)
+library(feasts)
+```
+
+# Walmart
+```{r}
+wm_train <- fread("~/kaggle/walmart/train.csv") %>%
+  janitor::clean_names() %>%
+  mutate(date = ymd(date)) %>%
+  mutate_at(vars(store, dept), as.factor)
+
+wm_test<- fread("~/kaggle/walmart/test.csv") %>%
+  janitor::clean_names() %>%
+  mutate(date = ymd(date)) %>%                
+  mutate_at(vars(store, dept), as.factor)
+
+feats <- fread("~/kaggle/walmart/features.csv") %>% janitor::clean_names() %>% mutate(date = ymd(date))
+stores <- fread("~/kaggle/walmart/stores.csv") %>% janitor::clean_names() %>% mutate(store = as.factor(store))
+```
+
+```{r}
+tsib <- wm_train %>%
+  mutate(date = yearweek(date)) %>%
+  as_tsibble(key = c("store", "dept"), index = date) %>%
+  group_by_key(store, dept) %>%
+  tsibble::fill_gaps(weekly_sales = 0)
+
+tsib %>%
+  as.tibble() %>% 
+  group_by(store, dept) %>%
+  summarize(n = n(),
+         non_zero = sum(weekly_sales > 0),
+         pct_non_zero = non_zero/n,
+         num_seas = 52/n) %>%
+  gather(key = measure, val = value, n, non_zero, pct_non_zero, num_seas) %>%
+  ggplot(aes(x = value)) + geom_histogram() + facet_wrap(~measure, scales = "free") 
+
+library(future)
+plan(multiprocess)
+plan(sequential)
+
+tictoc::tic()
+wm_feats <- tsib %>% 
+  mutate(n = n()) %>%
+  filter(n > 7) %>%
+  features(weekly_sales, list(feat_stl, feat_spectral))
+tictoc::toc()
+
+pcs <- wm_feats %>%
+  select(-store, -dept) %>%
+  mutate_all(~replace_na(.x, replace = mean(.x, na.rm = TRUE))) %>%
+  prcomp(scale=TRUE)
+
+
+library(ggfortify)
+autoplot(pcs, loadings = TRUE, loadings.label = TRUE)
+
+wm_train %>%
+  distinct(store, dept) %>%
+  left_join(stores) %>%
+  group_by(dept, type) %>%
+  summarize(
+    n_distinct(store),
+    n = n()
+  )
+```
+
+
+```{r}
+wm_feats %>%
+  gather(key = variable, value = value, seasonal_strength_year, trend_strength, spectral_entropy) %>%
+  ggplot(aes(x = value)) + geom_histogram() + facet_wrap(~variable)
+```
+
+
+_
+```{r}
+tsib %>%
+  mutate(is_holiday = as.numeric(is_holiday)) %>%
+  as.tibble() %>%
+  group_by(store, dept) %>%
+  summarize(
+    cor = cor(weekly_sales, is_holiday, method = "spearman", use = "na.or.complete")
+  ) %>%
+  ungroup %>%
+  mutate(mean_cor = mean(abs(cor), na.rm = TRUE)) %>%
+  ggplot(aes(x = cor)) + geom_histogram() + geom_vline(aes(xintercept = mean_cor))
+```
+
+```{r}
+train_w_var <- tsib %>%
+  ungroup %>%
+  mutate(store = as.integer(store)) %>%
+  left_join(feats %>% select(-is_holiday) %>% mutate(date = yearweek(date)), by = c("store", "date"))
+```
+
+```{r}
+get_correlations <- function(df) {
+  df %>% 
+    corrr::correlate(method = "spearman") %>%
+    select(variable = rowname, cor = weekly_sales) %>%
+    filter(variable != "weekly_sales") %>%
+    as.tibble()
+}
+
+library(furrr)
+plan(multiprocess)
+
+cor_df <- train_w_var %>%
+  mutate_at(vars(-date, -store, -dept), replace_na, replace = 0) %>%
+  as.tibble() %>%
+  group_by(store, dept) %>%
+  select(-date) %>%
+  nest() %>%
+  mutate(cor = future_map(data, get_correlations, .progress = TRUE))
+  
+cor_df %>%
+  unnest(cor) %>%
+  group_by(variable) %>%
+  mutate(mean_val = mean(abs(cor), na.rm = TRUE)) %>%
+  ggplot(aes(x = cor)) + geom_histogram() + geom_vline(aes(xintercept = mean_val)) + facet_grid(~variable)
+```
+
+```{r}
+train_w_var %>%
+  ggplot(aes(x = mark_down1, y = weekly_sales)) + geom_point() + geom_smooth()
+```
+
+```{r}
+overall_cor <- train_w_var %>%
+  mutate_at(vars(-date, -store, -dept), replace_na, replace = 0) %>%
+  as.tibble() %>%
+  select(-date, -store, -dept) %>%
+  nest() %>%
+  mutate(cor = future_map(data, get_correlations, .progress = TRUE))
+
+overall_cor %>% unnest(cor) %>% select(-data) %>% arrange(desc(abs(cor)))
+```
+
+
+```{r}
+rm(cor_df, feats, overall_cor,stores, train_w_var, tsib, wm_feats, wm_test, wm_train)
+```
+
+```{r}
+trunc_svd <- function(data_matrix, components, og_data) {
+  z <- svd(data_matrix, nu = components, nv = components)
+  s <- diag(z$d[1:components], components, components) #Takes 6 largest components
+  rec <- (z$u %*% s %*% t(z$v) %>% as.data.frame())
+  proc <- rec %>% mutate(comp = components) %>% bind_cols(og_data %>% select(date, is_holiday)) %>% gather(key = store, value = rec, starts_with("V")) %>% mutate(store = str_sub(store, 2, -1) %>% as.integer)
+
+  return(proc)
+}
+```
+
+
+```{r}
+wm_train %>%
+  filter(dept %in% 1:10) %>%
+  mutate(doy = yday(date)) %>%
+  ggplot(aes(x = doy, y = weekly_sales, group = store)) + geom_line(alpha = .5) + facet_wrap(year(date)~dept, nrow = 3, scales = "free_y")
+```
+
+
+```{r}
+wm_dex <- wm_train %>%
+  filter(dept == 1) %>%
+  spread(key = store, value = weekly_sales)
+
+wm_svd <- wm_dex %>%
+  select(-dept, -date, -is_holiday) %>%
+  as.matrix()
+
+```
+
+```{r}
+trunc_svd_var_exp <- function(train_df) {
+  wm_dex <- train_df %>%
+    spread(key = store, value = weekly_sales)
+
+  wm_svd <- wm_dex %>%
+    select(-date, -is_holiday) %>%
+    mutate_all(replace_na, replace = 0) %>%
+    as.matrix()
+  
+  1:ncol(wm_svd) %>% map_dfr(~trunc_svd(wm_svd, .x, wm_dex)) %>% 
+    left_join(train_df %>% mutate(store = as.integer(store))) %>%
+      mutate(weekly_sales = replace_na(weekly_sales, 0)) %>% 
+    mutate(error = weekly_sales - rec) %>%
+    group_by(comp) %>%
+    summarize(
+      sd_error = sd(error),
+      sd_sales = sd(weekly_sales),
+      pct_error = sd_error/sd_sales,
+      var_exp = 1 - pct_error
+    )
+}
+
+library(furrr)
+plan(multiprocess)
+svd_var_exp_df <- wm_train %>%
+  group_by(dept) %>%
+  nest()
+
+svd_var_exp <- svd_var_exp_df %>%
+  mutate(
+    var_exp = future_map(data, safely(trunc_svd_var_exp), .progress = TRUE)
+  ) %>%
+  unnest(var_exp)
+
+
+tt <- svd_var_exp %>%
+  mutate(
+    t = map_lgl(var_exp, is.null),
+    e = map_lgl(var_exp, is.tibble),
+  ) %>%
+  filter(!t, e) %>%
+  select(-data)
+
+tt %>% unnest(var_exp) %>%
+  ggplot(aes(x = comp, y = var_exp, group = dept)) + geom_line() + scale_y_continuous(limits = seq(0, 1)) + facet_wrap(~dept)
+```
+
+```{r}
+  wm_dex <- 
+svd_var_exp_df$data[[5]] %>% 
+    spread(key = store, value = weekly_sales)
+
+  wm_svd <- wm_dex %>%
+    select(-date, -is_holiday) %>%
+    mutate_all(replace_na, replace = 0) %>%
+    as.matrix()
+  
+  
+  svd(wm_svd, 10, 10)
+  
+ex <- 1:ncol(wm_svd) %>% map_dfr(~trunc_svd(wm_svd, .x, wm_dex))
+
+ex%>% 
+    left_join(svd_var_exp_df$data[[5]] %>% mutate(store = as.integer(store))) %>% 
+    mutate(weekly_sales = replace_na(weekly_sales, 0)) %>% 
+    mutate(error = weekly_sales - rec) %>%
+    group_by(comp) %>%
+    summarize(
+      sd_error = sd(error),
+      sd_sales = sd(weekly_sales),
+      pct_error = sd_error/sd_sales,
+      var_exp = 1 - pct_error
+    )
+```
+
+
+
+#Rossman
+```{r}
+rs_path <- "~/kaggle/rossmann/"
+rs_trn <- fread(file.path(rs_path, "train.csv")) %>% janitor::clean_names() %>% mutate(date = ymd(date))
+rs_store <- fread(file.path(rs_path, "store.csv")) %>% janitor::clean_names()
+rs_states <- fread(file.path(rs_path, "state_names.csv")) %>%
+  janitor::clean_names() %>%
+  left_join(fread(file.path(rs_path, "store_states.csv")) %>% janitor::clean_names())
+
+weather <- fread(file.path(rs_path, "weather.csv"), blank.lines.skip=TRUE) %>% janitor::clean_names() %>% mutate(date = ymd(date))
+```
+
+```{r}
+rs_tsib <- rs_trn %>%
+  as_tsibble(key = store, index = date)
+
+rs_feats <- rs_tsib %>%
+  features(sales, list(feat_stl, feat_spectral))
+
+rs_feats %>%
+  gather(key = variable, value = value, seasonal_strength_week, trend_strength, spectral_entropy) %>%
+  ggplot(aes(x = value)) + geom_histogram() + facet_wrap(~variable)
+  
+```
+
+
+
+
+```{r}
+rs_feats %>%
+  mutate(ds = "Rossmann") %>% 
+  select(-store) %>%
+  mutate(seas_strength = seasonal_strength_week) %>%
+#  bind_rows(
+# wm_feats %>% mutate(ds = "Walmart") %>% select(-store) %>% mutate(seas_strength = seasonal_strength_year)
+#  ) %>%
+  gather(key = variable, value = value, seas_strength, trend_strength, spectral_entropy) %>%
+  ggplot(aes(x = value, fill = ds)) + geom_histogram() + facet_wrap(ds~variable)
+```
+
+```{r}
+rs_w_feat <- rs_trn %>%
+  left_join(rs_states) %>%
+  left_join(weather, by = c("state_name" = "file", "date"))
+
+rs_cor_df <- rs_w_feat %>%
+  select(-day_of_week, -state_name, -state, -max_gust_speed_km_h) %>%
+  as.tibble() %>%
+  group_by(store) %>%
+  mutate_if(is.character, ~as.numeric(as.factor(.x))) %>%
+  select(-date, weekly_sales = sales) %>%
+  nest() %>%
+  mutate(cor = future_map(data, get_correlations, .progress = TRUE, ))
+
+rs_cor_df %>%
+  unnest(cor) %>%
+  group_by(variable) %>%
+  mutate(mean_val = mean(abs(cor), na.rm = TRUE)) %>%
+  ggplot(aes(x = cor)) + geom_histogram() + geom_vline(aes(xintercept = mean_val)) + facet_wrap(~variable)
+```
+
+```{r}
+overall_cor <- rs_w_feat %>%
+  select(-day_of_week, -state_name, -state, -max_gust_speed_km_h) %>%
+  as.tibble() %>%
+  mutate_if(is.character, ~as.numeric(as.factor(.x))) %>%
+  select(-date, weekly_sales = sales) %>%
+  get_correlations()
+
+overall_cor %>% arrange(desc(abs(cor)))
+```
+
+```{r}
+pcs <- rs_feats %>%
+  select(-store) %>%
+  mutate_all(~replace_na(.x, replace = mean(.x, na.rm = TRUE))) %>%
+  prcomp(scale=TRUE)
+
+
+autoplot(pcs, loadings = TRUE, loadings.label = TRUE)
+
+```
+
+
+```{r}
+rm(rs_trn, rs_tsib, rs_w_feat, weather, rs_store, rs_states, rs_feats, rs_cor_df)
+```
+
+
+# Grupo Bimbo
+```{r}
+bb_trn <- fread("~/kaggle/bimbok/train.csv") %>% janitor::clean_names()
+bb_test <- fread("~/kaggle/bimbok/test.csv") %>% janitor::clean_names()
+
+bb_fact <- bb_trn[, lapply(.SD, as.factor), .SDcols = c("agencia_id", "canal_id", "ruta_sak", "cliente_id", "producto_id")]
+bb_test_fact <- bb_test[, lapply(.SD, as.factor), .SDcols = c("agencia_id", "canal_id", "ruta_sak", "cliente_id", "producto_id")]
+```
+
+```{r}
+bb_trn[, .(count = .N), by = .(agencia_id, canal_id, ruta_sak, cliente_id, producto_id)] %>%
+ggplot(aes(x = count)) + geom_histogram()
+```
+
+```{r}
+bb_trn[, .(count = .N), by = .(agencia_id, cliente_id, producto_id, semana)] %>%
+  .[, .(count = .N), by = .(agencia_id, cliente_id, producto_id)] %>%
+  ggplot(aes(x = count)) + geom_histogram()
+```
+
+```{r}
+bb_trn[, .(count = .N), by = .(cliente_id, producto_id, semana)] %>%
+  .[, .(count = .N), by = .(cliente_id, producto_id)] %>%
+  ggplot(aes(x = count)) + geom_histogram()
+```
+
+
+```{r}
+bb_trn[, .(count = .N), by = .(agencia_id, cliente_id, producto_id, semana)] %>%
+  ggplot(aes(x = count)) + geom_histogram()
+```
+
+```{r}
+bb_test[, .(count = .N), by = .(agencia_id, cliente_id, producto_id, semana)] %>%
+  .[order(count, decreasing = TRUE)] %>%
+  ggplot(aes(x = count)) +
+  stat_ecdf()
+
+```
+
+```{r}
+bb_test[, .(count = .N), by = .(cliente_id, producto_id, semana)] %>%
+  .[order(count, decreasing = TRUE)] %>%
+  ggplot(aes(x = count)) +
+  stat_ecdf()
+
+```
+
+
+```{r}
+bb_fact[, lapply(.SD, nlevels), .SDcols = c("cliente_id", "producto_id", "agencia_id", "ruta_sak", "canal_id")]
+bb_test_fact[, lapply(.SD, nlevels), .SDcols = c("cliente_id", "producto_id", "agencia_id", "ruta_sak", "canal_id")]
+```
+
+```{r}
+agg <- bb_trn[, lapply(.SD, sum), .SDcols = c("venta_uni_hoy", "venta_hoy", "dev_uni_proxima", "dev_proxima", "demanda_uni_equil"), by = .(cliente_id, producto_id, semana)]
+agg[order(cliente_id, producto_id, semana)]
+```
+
+
+```{r}
+obs <- agg[, .(cliente_id, producto_id, semana, exists = 1L)]
+
+bt <- dcast(obs, cliente_id + producto_id ~ semana, value.var = "exists") %>%
+  melt(., id.vars = c("cliente_id", "producto_id"), measure.vars =  c("3", "4", "5", "6", "7", "8", "9"), variable.name = "semana")
+
+full_ds <- merge(bt[, semana := as.integer(semana)], agg, all.x = TRUE)
+
+rm(bt, agg)
+gc()
+
+for (j in seq_len(ncol(full_ds))) {
+  set(full_ds, which(is.na(full_ds[[j]])),j,0)
+}  
+
+rm(bb_fact, bb_test_fact)
+
+full_ds <- full_ds[order(cliente_id, producto_id, semana)]
+```
+
+
+```{r}
+safe_spec <- possibly(feat_spectral, otherwise = NA)
+full_ds[, .(entropy = safe_spec(demanda_uni_equil) %>% as.numeric), by = .(cliente_id, producto_id)]
+
+plan(multiprocess)
+full_ds_feat <- full_ds[, .(.(demanda_uni_equil)), by = .(cliente_id, producto_id)]
+full_ds_feat[, ent := future_map(V1, ~safe_spec(.x) %>% as.numeric)]
+
+```
+

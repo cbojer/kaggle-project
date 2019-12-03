@@ -1,0 +1,25 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+rm(list = ls())
+source("./Helpers/package_installer.R")
+package_installer(c("tidyverse", "data.table"))
+
+```
+
+```{r}
+train <- fread("Walmart - Sales in Stormy Weather/data/train.csv")
+
+train[, id := paste(store_nbr, item_nbr, sep = "_")]
+active_ids <- train[, .(sum(units)), id][V1 != 0, id]
+train <- train[id %in% active_ids]
+```
+
+```{r}
+train$days <- as.numeric(as.Date(train[,date],"%Y-%m-%d")-as.Date("2012-3-17","%Y-%m-%d"))/1.0
+
+```
+

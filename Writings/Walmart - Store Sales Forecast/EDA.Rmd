@@ -1,0 +1,21 @@
+---
+title: "R Notebook"
+output: document_md
+---
+
+```{r}
+rm(list = ls())
+source("../Helpers/package_installer.R")
+package_installer(c("tidyverse", "tsibble", "data.table", "janitor"))
+```
+
+```{r}
+train <- fread("Data/train.csv") %>% clean_names()
+test <- fread("Data/test.csv") %>% clean_names()
+feats <- fread("Data/features.csv") %>% clean_names()
+stores <- fread("Data/stores.csv") %>% clean_names()
+```
+
+
+```
+
