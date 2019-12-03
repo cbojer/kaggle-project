@@ -59,12 +59,15 @@ metad
 ```{r}
 weather <- fread("../ashrae-energy-prediction/weather_train.csv") #Note missing data
 weather$timestamp <- as_datetime(weather$timestamp)
+
+weather_test <- fread("../ashrae-energy-prediction/weather_test.csv") #Note missing data
+weather_test$timestamp <- as_datetime(weather_test$timestamp)
 weather %>% summary #many missing values for cloud coverage, precip, some for sea pressure
 ```
 
 ```{r}
 joined <- merge(trn, metad, all.x = TRUE)
-rm(trn, metad)
+rm(trn)
 gc()
 
 joined <- merge(joined, weather, by = c("site_id", "timestamp"), all.x = TRUE)
@@ -72,10 +75,20 @@ joined
 ```
 
 ```{r}
+joined_test <- merge(test, metad, all.x = TRUE)
+rm(test, metad)
+gc()
+
+joined_test <- merge(joined_test, weather_test, by = c("site_id", "timestamp"), all.x = TRUE)
+```
+
+
+```{r}
 library(feather)
 write_feather(joined, "../ashrae-energy-prediction/trn_df.feather")
-
-joined
+write_feather(joined_test, "../ashrae-energy-prediction/test_df.feather")
+joined <- read_feather("../ashrae-energy-prediction/trn_df.feather")
+joined_test <- read_feather("../ashrae-energy-prediction/test_df.feather")
 ```
 
 ```{r}
@@ -112,5 +125,292 @@ joined[, .(q10 = quantile(meter_reading, 0.1), q25 = quantile(meter_reading, 0.2
   arrange(desc(q50)) %>% 
   mutate(building_id = forcats::fct_reorder(building_id, q50)) %>% 
   ggplot(aes(x = building_id, y = value)) + geom_point(aes(color = as.integer(building_id)), size = 1) + scale_y_log10() + facet_wrap(~quantile) + geom_smooth()
+```
+
+```{r}
+#Discoveries:
+#Different pattern throughout summer/autumn (Aug-Oct) for some buildings (9) both meter 0 + 1
+#Many with wierd/different data distribution before in mid may, e.g. 10, 11, 12, 7(0), 8, 9
+#Spike on many in start may, also the buildings with very little reading data in this period
+#Missing values (stretches with zero), e.g. 7(1)
+#Level shifts: e.g. 19 in Late November, 29(1) in November and towards end of dataset
+#Outlier days with diff distribution, e.g. 16 in start june
+#Big outliers: check if these are similar across buildings on same site: if so, probably holiday, otherwise remove?
+#Very different scales - should we scale?
+#Very intermittent data, e.g. 1000(3): Missing or nature?
+
+```
+
+
+```{r}
+library(data.table)
+library(dplyr)
+library(ggplot2)
+joined %>% as.data.table() %>% .[building_id %in% 1:6] %>%  
+  ggplot(aes(x = timestamp, y = meter_reading)) + geom_line() + facet_wrap(building_id~meter, scales = "free", nrow =6)
+```
+
+```{r}
+library(lubridate)
+library(scales)
+joined %>% as.data.table() %>% .[building_id %in% 7:12] %>%  
+  ggplot(aes(x = timestamp, y = meter_reading)) + geom_line() + facet_wrap(building_id~meter, scales = "free_y", ncol = 1)  + scale_x_datetime(date_breaks = "1 month", labels = date_format("%B"))
+```
+
+```{r}
+
+joined %>% as.data.table() %>% .[building_id %in% 13:20] %>%  
+  ggplot(aes(x = timestamp, y = meter_reading)) + geom_line() + facet_wrap(building_id~meter, scales = "free_y", ncol = 1)  + scale_x_datetime(date_breaks = "1 month", labels = date_format("%B"))
+```
+
+```{r}
+
+joined %>% as.data.table() %>% .[building_id %in% 21:28] %>%  
+  ggplot(aes(x = timestamp, y = meter_reading)) + geom_line() + facet_wrap(building_id~meter, scales = "free_y", ncol = 1)  + scale_x_datetime(date_breaks = "1 month", labels = date_format("%B"))
+```
+
+```{r}
+
+joined %>% as.data.table() %>% .[building_id %in% 29:36] %>%  
+  ggplot(aes(x = timestamp, y = meter_reading)) + geom_line() + facet_wrap(building_id~meter, scales = "free_y", ncol = 1)  + scale_x_datetime(date_breaks = "1 month", labels = date_format("%B"))
+```
+
+```{r}
+
+joined %>% as.data.table() %>% .[building_id %in% 37:44] %>%  
+  ggplot(aes(x = timestamp, y = meter_reading)) + geom_line() + facet_wrap(building_id~meter, scales = "free_y", ncol = 1)  + scale_x_datetime(date_breaks = "1 month", labels = date_format("%B"))
+```
+
+```{r}
+joined %>% as.data.table() %>% .[building_id %in% 45:52] %>%  
+  ggplot(aes(x = timestamp, y = meter_reading)) + geom_line() + facet_wrap(building_id~meter, scales = "free_y", ncol = 1)  + scale_x_datetime(date_breaks = "1 month", labels = date_format("%B"))
+```
+
+```{r}
+
+joined %>% as.data.table() %>% .[building_id %in% 1000:1005] %>%  
+  ggplot(aes(x = timestamp, y = meter_reading)) + geom_line() + facet_wrap(building_id~meter, scales = "free_y", ncol = 1)  + scale_x_datetime(date_breaks = "1 month", labels = date_format("%B"))
+```
+
+```{r}
+joined %>% as.data.table() %>% .[building_id %in% 992:995] %>%  
+  ggplot(aes(x = timestamp, y = meter_reading)) + geom_line() + facet_wrap(building_id~meter, scales = "free_y", ncol = 1)  + scale_x_datetime(date_breaks = "1 month", labels = date_format("%B"))
+```
+
+```{r}
+joined %>% as.data.table() %>% .[building_id %in% 996:999] %>%  
+  ggplot(aes(x = timestamp, y = meter_reading)) + geom_line() + facet_wrap(building_id~meter, scales = "free_y", ncol = 1)  + scale_x_datetime(date_breaks = "1 month", labels = date_format("%B"))
+```
+
+```{r}
+
+joined %>% as.data.table() %>% .[building_id %in% 988:991] %>%  
+  ggplot(aes(x = timestamp, y = meter_reading)) + geom_line() + facet_wrap(building_id~meter, scales = "free_y", ncol = 1)  + scale_x_datetime(date_breaks = "1 month", labels = date_format("%B"))
+```
+
+```{r}
+library(stringr)
+joined_date <- joined %>%
+  as.data.table() %>%
+  .[!(site_id == 0 & meter == 0 & timestamp < lubridate::make_datetime(2016, 05, 20, 18))] %>% #Remove missing period from site 0 & meter type 0 (elec)
+  .[, `:=` (dow = wday(timestamp), hour = hour(timestamp), month = month(timestamp))] %>% 
+  .[, log_meter := log(meter_reading + 1)] %>% 
+  .[, pred := median(log_meter), by = .(building_id, meter, dow, hour)] %>% 
+  .[, .(building_id, meter, timestamp, dow, hour, site_id, pred, log_meter)] %>% 
+  .[, res := log_meter - pred] %>% 
+  .[, rmse := sqrt(mean(res^2)), by = .(building_id, meter)] %>% 
+  .[order(-rmse)]
+
+joined_date[, .(rmsle = sqrt(mean(res^2)))]
+perf_by_ts <- joined_date[, .(rmse = sqrt(mean(res^2))), by = .(building_id, meter)] %>%
+  .[order(-rmse)] %>% 
+  .[,id := str_c(building_id, meter, sep = "_")]
+
+
+```
+
+```{r}
+joined_date %>%
+  .[,id := str_c(building_id, meter, sep = "_")] %>% 
+  .[id %in% perf_by_ts$id[1:10]] %>% 
+   ggplot(aes(x = timestamp, y = log_meter)) + geom_line() + geom_line(aes(y = pred, color = "fc")) + facet_wrap(building_id~meter, scales = "free_y", ncol = 1)  + scale_x_datetime(date_breaks = "1 month", labels = date_format("%B"))
+```
+
+```{r}
+library(trelliscopejs)
+joined_date %>%
+  .[,id := str_c(building_id, meter, sep = "_")] %>% 
+  .[site_id == 1] %>% 
+  .[, site_id := cog(site_id)] %>% 
+  ggplot(aes(x = timestamp, y = log_meter)) +
+  geom_line() +
+  geom_line(aes(y = pred, color = "fc")) +
+  scale_x_datetime(date_breaks = "1 month", labels = date_format("%B")) +
+  facet_trelliscope(~ building_id + meter, ncol = 4, nrow = 4, width = 400, height = 200)  
+```
+
+```{r}
+joined_date[!(site_id == 0 & meter == 0 & timestamp < lubridate::make_datetime(2016, 05, 20, 18))] %>% 
+  .[,id := str_c(building_id, meter, sep = "_")] %>% 
+  .[site_id == 0] %>% 
+  .[, site_id := cog(site_id)] %>% 
+  ggplot(aes(x = timestamp, y = log_meter)) +
+  geom_line() +
+  geom_line(aes(y = pred, color = "fc")) +
+  scale_x_datetime(date_breaks = "1 month", labels = date_format("%B")) +
+  facet_trelliscope(~ building_id + meter, ncol = 4, nrow = 4, width = 400, height = 200)  
+```
+
+```{r}
+  joined_date %>% 
+  filter(site_id == 0, meter == 0, building_id == 18) %>%
+  ggplot(aes(x = timestamp, y = log_meter)) + geom_line()
+```
+
+```{r}
+joined_date[meter == 0] %>%
+  .[, date := date(timestamp)] %>% 
+  .[, .(log_meter = mean(log_meter)), by = .(building_id, date, site_id)] %>% 
+  .[, scaled := log_meter/mean(log_meter), by = .(building_id, site_id)] %>% 
+  ggplot(aes(x = date, y = scaled, group = building_id)) + geom_line(alpha = .1) + facet_wrap(~site_id, scales = "free")
+
+```
+
+```{r}
+joined_date[meter == 0] %>%
+  .[, hour := hour(timestamp)] %>% 
+  .[, .(log_meter = mean(log_meter)), by = .(building_id, site_id, hour)] %>% 
+  .[, profile := log_meter/mean(log_meter), by = .(building_id, site_id)] %>% 
+  ggplot(aes(x = hour, y = profile, group = building_id)) + geom_line(alpha = .1) + facet_wrap(~site_id, scales = "free")
+
+```
+
+```{r}
+library(tidyverse)
+library(data.table)
+lgbds <- joined %>%
+  as.data.table() %>%
+  .[!(site_id == 0 & meter == 0 & timestamp < lubridate::make_datetime(2016, 05, 20, 18))] %>% #Remove missing period from site 0 & meter type 0 (elec)
+  .[, `:=` (dow = wday(timestamp), hour = hour(timestamp), month = month(timestamp))] %>% 
+  .[, log_meter := log(meter_reading + 1)] %>% 
+  .[, `:=` (mean_reading = mean(log_meter), median_reading = median(log_meter)), by = .(building_id, meter, dow, hour)] %>% 
+  .[, .(site_id, building_id, meter, primary_use, square_feet, year_built, floor_count, air_temperature, cloud_coverage, dew_temperature, precip_depth_1_hr, sea_level_pressure, wind_direction, wind_speed, dow, hour, month, log_meter, mean_reading, median_reading)] 
+
+use_encoder <- tibble(primary_use = lgbds$primary_use %>% unique %>% levels, primary_use_enc = lgbds$primary_use %>% unique %>% labels %>% as.integer)
+
+```
+
+```{r}
+lgbds_enc <- merge(lgbds, use_encoder, by = c("primary_use"), all.x = TRUE)
+lgbds_enc <- lgbds_enc %>% .[, `:=` (building_id = as.integer(building_id), meter = as.integer(meter), dow = as.integer(dow), month = as.integer(month))]
+```
+
+
+```{r}
+library(lightgbm)
+lgb_trn <- lgb.Dataset(as.matrix(lgbds_enc[,-c("primary_use", "log_meter")]), label = lgbds$log_meter)
+bst <- lightgbm(data = lgb_trn, nrounds = 1000L, learning_rate = 1, objective = "regression", categorical_feature = c(1, 2, 3, 14, 15, 16, 19), num_threads = 2)
+```
+
+```{r}
+lgb.importance(bst) %>% lgb.plot.importance()
+```
+
+```{r}
+lgb_preds <- predict(bst, data = as.matrix(lgbds_enc[,-c("primary_use", "log_meter")]))
+```
+
+```{r}
+plot_df <- joined %>%
+  as.data.table() %>%
+  .[!(site_id == 0 & meter == 0 & timestamp < lubridate::make_datetime(2016, 05, 20, 18))] %>% #Remove missing period from site 0 & meter type 0 (elec)
+  .[, `:=` (dow = wday(timestamp), hour = hour(timestamp), month = month(timestamp))] %>% 
+  .[, log_meter := log(meter_reading + 1)]
+
+rand100 <- sample(unique(plot_df$building_id), size = 100)
+nested <- plot_df %>% 
+  .[order(site_id, building_id, meter, timestamp)] %>%
+  .[, .(site_id, building_id, meter, timestamp, log_meter)] %>% 
+  .[, list(data = list(log_meter)), by = .(site_id, building_id, meter)]
+
+walk2(nested[meter == 0]$data, "chart_out.js", function(meters, file) {
+  
+})
+
+
+nested
+
+nested[meter == 0]$data[1:2] %>% write_chart_data("chart_out.js")
+
+#TODO: Ensure all obs are present (same n obs per ts -> fill missing)
+#TODO: Allow for filtering by meter
+#TODO: Sort by something, e.g. building_id
+
+for(m in unique(nested$meter)) {
+  nested[meter == m]$data %>% write_chart_data(sprintf("plots/meter_%s.js", m), m)
+}
+
+
+
+
+
+
+```
+
+```{r}
+ # writeLines(jsonlite::toJSON(readings), con = fileConn)
+
+write_chart_data <- function(nested_data, file, suffix) {
+  fileConn <- file(file)
+  writeLines(text = str_c("var m_data_", suffix, " = ", jsonlite::toJSON(nested_data), ";"), con = fileConn)
+  close(fileConn)
+}
+
+write_chart_data(nested$data, "test.js")
+
+write_chart_html_file <- function(file_name, meters) {
+  upper_1 <- '<html xmlns="http://www.w3.org/1999/xhtml"><head>
+    <title>Index</title>
+    <script src="https://code.jquery.com/jquery-1.4.1.min.js" integrity="sha256-LOx49zn73f7YUs15NNJTDnzEyPFLOGc7A7pfuICtTMc=" crossorigin="anonymous"></script>'
+  
+  
+  upper_2 <- 
+   upper_3 <- '<script src="timeseries2.js" type="text/javascript"></script>
+    </head>
+    <body>
+    <h1>Time series data</h1>';
+  
+    buttons <- map_chr(meters, function(meter) { 
+      button_html <- sprintf('<button id="btn_%s" type="button">%s</button>', meter, meter)
+    }) %>% paste(collapse = "\n")
+    
+  lower <- '<div id="content"></div></body></html>'
+  
+  fc <- file(file_name)
+  str_c(upper, buttons, lower) %>% writeLines(con = fc)
+  close(fc)
+}
+write_chart_html_file("plots/plots.html", unique(nested$meter))
+
+
+
+button_js <- map_chr(unique(nested$meter), function(meter)  {
+  button_click_func <- sprintf('      $("#btn_%s").click(function () {\r\n           doCharts(m_data_%s);\r\n       });', meter, meter)
+}) %>% paste(collapse = "\n\n", sep = "")
+
+doc_ready <- '$(document).ready(function () {\r\n';
+doc_ready_end <- '\n});\n\n'
+
+paste( collapse = "")
+
+core_func <- readr::read_file("plots/ts_funcs.js")
+
+fc <- file("plots/timeseries2.js")
+paste(doc_ready, button_js, doc_ready_end, core_func, collapse = '\n', sep = "") %>% writeLines(con = fc)
+close(fc)
+```
+
+```{r}
+button_js
 ```
 
