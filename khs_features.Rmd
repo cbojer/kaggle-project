@@ -318,5 +318,7 @@ patchwork <- wrap_plots(a=pc_plots$M3,                    b=pc_plots$M4,        
   plot_layout(ncol = 4, nrow = 4, widths = c(0.1, 1, 1, 1), heights = c(1, 1, 1, 0.1), design = layout)
 
 patchwork
+
+ggsave("plots/khs_features.png", patchwork, width = 12, height = 10)
 ```
 
