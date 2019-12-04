@@ -18,11 +18,12 @@ library(tidyverse)
 library(forecast)
 library(tscompdata)
 library(M4comp2018)
+library(patchwork)
 
 ## Source Functions
 source("R/utils.R")
 source("R/prepdata.R")
-source("R/svd.R")
+source("R/multiplot.R")
 ```
 
 # Prepare Data Information
@@ -34,7 +35,7 @@ ids <- sapply(data_dirs, get_id)
 data_info <- tribble(
   ~id,    ~data_dir,    ~train_dir,    ~group,                      ~target,         ~index,       ~ts_frequency,
   ids[1], data_dirs[1], train_dirs[1], c("store_nbr", "item_nbr"),  "unit_sales",    "date",       c(365.25),
-  ids[2], data_dirs[2], train_dirs[2], c("air_store_id"),           "visitors",      "visit_date", c(365.25),
+  ids[2], data_dirs[2], train_dirs[2], c("air_store_id"),           "visitors",      "visit_date", c(7),
   ids[3], data_dirs[3], train_dirs[3], c("store"),                  "sales",         "date",       c(365.25),
   ids[4], data_dirs[4], train_dirs[4], c("store", "dept"),          "weekly_sales",  "date",       c(365.25/7),
   ids[5], data_dirs[5], train_dirs[5], c("store_nbr", "item_nbr"),  "units",         "date",       c(365.25),
@@ -126,6 +127,7 @@ rm(train) ; gc()
 # Extract Kang, Hyndman, Smith Features from Kaggle Competitions
 ```{r, eval = FALSE}
 for(idx in 1:nrow(data_info)) {
+  idx <- 2
   print(sprintf("Extracting KHS features from %s", data_info$id[[idx]]))
   
   # Load & prepare data
@@ -158,7 +160,7 @@ for(idx in 1:nrow(data_info)) {
 ```
 
 # Extract Kang, Hyndmad, Smith Features from M* Competitions
-```{r}
+```{r, eval = FALSE}
 # Load data
 M3 <- Mcomp::M3
 data(M4)
@@ -181,23 +183,140 @@ saveRDS(cbind(id = "M4", M4_feats), "Results/khs_features/M4.rds")
 ```
 
 
+# Explore M* Features
+```{r, fig.width=10}
+M3_feats <- readRDS("Results/khs_features/M3.rds")
+M4_feats <- readRDS("Results/khs_features/M4.rds")
 
-```{r}
-prcomp(select(M3_feats, -Period), scale=TRUE)$x %>%
+p1 <- prcomp(select(M3_feats, -Period, -id), scale=TRUE)$x %>%
   as_tibble() %>%
   bind_cols(Period=M3_feats$Period) %>%
   ggplot(aes(x=PC1, y=PC2)) +
   geom_point(aes(col=Period)) +
   labs(title = "M3 Features")
-```
 
-```{r}
-prcomp(select(M4_feats, -Period), scale=TRUE)$x %>%
+p2 <- prcomp(select(M4_feats, -Period, -id), scale=TRUE)$x %>%
   as_tibble() %>%
   bind_cols(Period=M4_feats$Period) %>%
   ggplot(aes(x=PC1, y=PC2)) +
   geom_point(aes(col=Period)) +
   labs(title = "M4 Features")
+
+multiplot(p1, p2, cols = 2)
 ```
 
+
+```{r}
+# Load KHS features
+feature_files <- list.files("Results/khs_features/", full.names = T)
+all_features <- rbindlist(lapply(feature_files, readRDS))
+
+# Investigate % of rows that contain NA's
+all_features[, .("Rows with NA" = scales::percent(sum(complete.cases(.SD))/.N)), id]
+
+# Fill NA's with 0
+num_cols <- which(sapply(all_features, is.numeric))
+setnafill(all_features, fill = 0, cols = num_cols)
+
+# Sort data by ID
+setkey(all_features, "id")
+
+# Adjust frequency for recruit-restaurant-visitor-forecasting
+all_features[id == "recruit-restaurant-visitor-forecasting", Frequency := 365]
+all_features[id == "recruit-restaurant-visitor-forecasting", Period := as.factor(365)]
+all_features[, Period := as.factor(as.character(Period))]
+
+# Adjust ID's
+all_features[, id := case_when(id == "favorita-grocery-sales-forecasting" ~ "Corporación Favorita",
+                               id == "recruit-restaurant-visitor-forecasting" ~ "Recruit Restaurant",
+                               id == "rossmann-store-sales" ~ "Rossmann",
+                               id == "walmart-recruiting-store-sales-forecasting" ~ "Walmart",
+                               id == "walmart-storm-weather-competition" ~ "Walmart Stormy Weather",
+                               id == "web-traffic-time-series-forecasting" ~ "Wikipedia",
+                               TRUE ~ id)]
+
+all_features$id %>% unique
+
+```
+
+
+
+```{r}
+pc_obj <- prcomp(select(all_features, -Period, -id), scale=TRUE)
+
+plot.data <- pc_obj$x %>% 
+  as_tibble() %>%
+  bind_cols(id = all_features$id)
+
+plot.xlims <- c(min(plot.data$PC1) %>% floor(),
+                max(plot.data$PC1) %>% ceiling())
+
+plot.ylims <- c(min(plot.data$PC2) %>% floor(),
+                max(plot.data$PC2) %>% ceiling())
+
+unique_ids <- unique(plot.data$id)
+color_scheme <- ggthemes::ptol_pal()(length(unique_ids))
+unique_cols <- sapply(unique_ids, function(x) {
+  color_scheme[grep(eval(x), unique_ids)][1]
+})
+
+pc_plots <- sapply(unique_ids, function(x) {
+  tmp <- plot.data %>%
+    filter(id == eval(x))
+  
+  tmp %>%
+    ggplot(aes(x=PC1, y=PC2)) +
+    geom_point(colour = unique_cols[eval(x)], alpha = 0.1) +
+    theme_bw(base_size = 12) +
+    theme(axis.title.x = element_blank(), 
+          axis.title.y = element_blank(),
+          axis.text.x = element_blank(),
+          axis.text.y = element_blank(),
+          axis.ticks = element_blank()) +
+    xlim(plot.xlims) + ylim(plot.ylims) +
+    facet_wrap(~id)
+  
+}, USE.NAMES = TRUE, simplify = FALSE)
+
+loading.data <- pc_obj$rotation %>%
+  as_tibble(rownames = "rn")
+
+loading.xlims <- c(min(loading.data$PC1*3) %>% floor(),
+                   max(loading.data$PC1*3) %>% ceiling())
+
+loading.ylims <- c(min(loading.data$PC2*3) %>% floor(),
+                   max(loading.data$PC2*3) %>% ceiling())
+
+pc_plots[["loadings"]] <- loading.data %>%
+  ggplot() +
+  geom_segment(aes(x = 0, y = 0, xend = PC1*2.5, yend = PC2*2.5),
+               arrow = grid::arrow(length = grid::unit(8, "points"), type = "closed"),
+               col = "firebrick") +
+  geom_text(aes(x = PC1*3, y = PC2*3, label = rn), col = "firebrick") +
+  xlim(loading.xlims) + ylim(loading.ylims) +
+  theme_bw(base_size = 12) +
+  theme(axis.title.x = element_blank(), 
+        axis.title.y = element_blank(),
+        axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks = element_blank()) +
+  facet_wrap(~"Loadings")
+
+layout <- 'yabc \n ydef \n yghi \n xxxx'
+
+var_exp <- pc_obj$sdev^2/sum(pc_obj$sdev^2)
+var_exp <- var_exp[c(1,2)]
+labs <- paste0(paste0("PC", 1:2), " (", scales::percent(var_exp), ")")
+
+x_lab <- textGrob(labs[1], hjust = 0.5)
+y_lab <- textGrob(labs[2], rot = 90, vjust = 0.5)
+
+patchwork <- wrap_plots(a=pc_plots$M3,                    b=pc_plots$M4,                       c=pc_plots$`Corporación Favorita`,
+                        d=pc_plots$`Recruit Restaurant`,  e=pc_plots$loadings,                 f=pc_plots$Rossmann,
+                        g=pc_plots$Walmart,               h=pc_plots$`Walmart Stormy Weather`, i=pc_plots$Wikipedia,
+                        x = x_lab, y = y_lab) +
+  plot_layout(ncol = 4, nrow = 4, widths = c(0.1, 1, 1, 1), heights = c(1, 1, 1, 0.1), design = layout)
+
+patchwork
+```
 
