@@ -1,0 +1,250 @@
+---
+title: "RossmannBM"
+output: html_document
+---
+
+```{r}
+library(data.table)
+library(forecast)
+library(tsibble)
+library(tidyverse)
+library(lubridate)
+library(zoo)
+
+train <- fread("~/kaggle/rossmann/train.csv") %>% mutate(Date = ymd(Date))
+test <- fread("~/kaggle/rossmann/test.csv") %>% mutate(Date = ymd(Date))
+```
+
+
+
+
+# Simple Benchmarks
+
+## Naive
+Seasonal Naive taking into account Promo & Open
+```{r}
+naive <- train  %>% group_by(Store, DayOfWeek, Promo, Open)  %>%  top_n(n = 1, wt = Date)
+naive_preds <- test %>% select("Id", "Store", "DayOfWeek", "Promo", "Open")  %>% left_join(naive %>% select(Store, DayOfWeek, Promo, Date, Sales, Open), by = c("Store", "DayOfWeek", "Promo", "Open"))
+naive_preds %>% select(Id, Sales)  %>% write.csv("naive_by_store_dow_promo.csv", row.names=F)
+```
+
+## Moving Median (k = 5)
+```{r}
+move_med <- train %>% group_by(Store, DayOfWeek, Promo, Open)  %>%  top_n(n = 5, wt = Date)  %>% summarize(Sales = median(Sales))
+preds_move_med <- test %>% select("Id", "Store", "DayOfWeek", "Promo")  %>% left_join(move_med %>% select(Store, DayOfWeek, Promo, Sales), by = c("Store", "DayOfWeek", "Promo"))
+write.csv(preds_move_med  %>% select("Id", "Sales"), "mm5.csv", row.names = FALSE)
+```
+
+# Time Series Methods
+
+```{r}
+# PREDICTION FRAMEWORK
+forecast_by_store <- function(ds, fc_func, h, freq, ...) {
+  ds %>% 
+    group_by(Store) %>%
+    nest() %>%
+    mutate(
+      ts = map(data, ~ts(.$Sales, frequency = freq)),
+      fc = map(ts, fc_func, h = h, ...),
+      fc = map(fc, ~as.numeric(.x$mean))
+    ) %>% 
+    unnest(fc) %>% 
+    select(-ts, -data)
+}
+
+rossmann_ts_predictions <- function(fc_func, h, ...) {
+  
+  #Forecast
+  sunday_closed_fc <- sunday_closed_imp %>% forecast_by_store(fc_func, h, 6)
+  sunday_open_fc <- sunday_open_imp %>% forecast_by_store(fc_func, h, 7)
+
+  #Calculate horizons for each date in test set
+  test_dates_closed <- test %>% filter(DayOfWeek != 7) %>% distinct(Store, Date) %>% arrange(Store, Date) %>% group_by(Store) %>% mutate(h = row_number())
+  test_dates <- test %>% distinct(Store, Date) %>% arrange(Store, Date) %>% group_by(Store) %>% mutate(h = row_number())
+
+  #Join dates on predictions
+  sunday_closed_fc_out <- sunday_closed_fc %>% 
+    group_by(Store) %>% 
+    mutate(h = row_number()) %>% 
+    left_join(test_dates_closed %>% filter(!Store %in% sunday_open_stores), by = c("Store", "h"))
+  
+  sunday_open_fc_formatted <- sunday_open_fc %>% 
+    group_by(Store) %>% 
+    mutate(h = row_number()) %>% 
+    left_join(test_dates %>% filter(Store %in% sunday_open_stores), by = c("Store", "h"))
+    
+  #Join predictions on test set
+  open_fc <- test %>%
+    filter(Store %in% sunday_open_stores) %>% 
+    left_join(sunday_open_fc_formatted)
+  
+  closed_fc <- test %>% 
+    filter(!Store %in% sunday_open_stores) %>% 
+    left_join(sunday_closed_fc_out)
+  
+  #Combine predictions and replace with zero on closed days
+  results <- open_fc %>% 
+    bind_rows(closed_fc) %>% 
+    mutate(
+      fc = if_else(Open == 0, 0, fc),
+      fc = replace_na(fc, replace = 0),
+    ) 
+  
+  return(results)
+}
+
+rossmann_ts_predictions_log <- function(fc_func, h, ...) {
+  
+  #Forecast
+  sunday_closed_fc <- sunday_closed_imp %>% mutate(Sales = log1p(Sales)) %>% forecast_by_store(fc_func, h, 6)
+  sunday_open_fc <- sunday_open_imp %>% mutate(Sales = log1p(Sales)) %>% forecast_by_store(fc_func, h, 7)
+
+  #Calculate horizons for each date in test set
+  test_dates_closed <- test %>% filter(DayOfWeek != 7) %>% distinct(Store, Date) %>% arrange(Store, Date) %>% group_by(Store) %>% mutate(h = row_number())
+  test_dates <- test %>% distinct(Store, Date) %>% arrange(Store, Date) %>% group_by(Store) %>% mutate(h = row_number())
+
+  #Join dates on predictions
+  sunday_closed_fc_out <- sunday_closed_fc %>% 
+    group_by(Store) %>% 
+    mutate(h = row_number()) %>% 
+    left_join(test_dates_closed %>% filter(!Store %in% sunday_open_stores), by = c("Store", "h"))
+  
+  sunday_open_fc_formatted <- sunday_open_fc %>% 
+    group_by(Store) %>% 
+    mutate(h = row_number()) %>% 
+    left_join(test_dates %>% filter(Store %in% sunday_open_stores), by = c("Store", "h"))
+    
+  #Join predictions on test set
+  open_fc <- test %>%
+    filter(Store %in% sunday_open_stores) %>% 
+    left_join(sunday_open_fc_formatted)
+  
+  closed_fc <- test %>% 
+    filter(!Store %in% sunday_open_stores) %>% 
+    left_join(sunday_closed_fc_out)
+  
+  #Combine predictions and replace with zero on closed days
+  results <- open_fc %>% 
+    bind_rows(closed_fc) %>% 
+    mutate(
+      fc = expm1(fc)
+    ) %>%
+    mutate(
+      fc = if_else(Open == 0, 0, fc),
+      fc = replace_na(fc, replace = 0),
+    ) 
+  
+  return(results)
+}
+
+
+create_submission_file <- function(results, path) {
+  results %>%
+    arrange(Id) %>%
+    select(Id, Sales = fc) %>% 
+    write.csv(path, row.names = FALSE)
+}
+```
+
+```{r}
+
+test %>% summarize(min(Date), max(Date), n_distinct(Date))
+```
+
+```{r}
+train %>% summarize(min(Date), max(Date))
+train %>% filter(Date == ymd("2015-07-31"))
+holdout_dates <- train %>% distinct(Date) %>% top_n(n = 48, wt = Date) %>% pull(Date)
+
+trn_ds <- train %>% filter(! Date %in% holdout_dates)
+val_ds <- train %>% filter(Date %in% holdout_dates) 
+```
+
+```{r}
+#DATA PREP
+sunday_open_stores <- trn_ds %>% group_by(Store, DayOfWeek) %>% summarize(pct_open = sum(Open == 1)/n()) %>% filter(DayOfWeek == 7, pct_open > 0)  %>% pull(Store)
+
+sunday_closed <- trn_ds  %>% 
+    filter(! Store %in% sunday_open_stores)  %>%
+    filter(DayOfWeek != 7) %>%
+    mutate(Sales = if_else(Open == 0, NA_integer_, Sales))
+
+
+sunday_open <- trn_ds  %>% 
+    filter(Store %in% sunday_open_stores)  %>%
+    mutate(Sales = if_else(Open == 0, NA_integer_, Sales))
+
+sunday_closed_imp <- sunday_closed  %>%
+  as_tsibble(key = Store, index = Date) %>%
+  tsibble::fill_gaps() %>%
+  as_tibble() %>%
+  mutate(DayOfWeek = lubridate::wday(Date, week_start = 1)) %>% 
+  filter(DayOfWeek != 7) %>% 
+  group_by(Store, DayOfWeek) %>%
+  mutate(
+    Sales = na.locf(Sales, na.rm = FALSE), #Impute using Seasonal Naive
+    Sales = na.aggregate(Sales, FUN = median, na.rm = TRUE) #Fall back to median by weekday
+  ) %>%
+  as_tsibble(key = Store, index = Date) %>% 
+  arrange(Date) %>%
+  as_tibble()
+
+sunday_open_imp <- sunday_open %>%
+  as_tsibble(key = Store, index = Date) %>%
+  tsibble::fill_gaps() %>%
+  as_tibble() %>%
+  mutate(DayOfWeek = lubridate::wday(Date, week_start = 1)) %>%
+  group_by(Store, DayOfWeek) %>%
+  mutate(
+    Sales = na.locf(Sales, na.rm = FALSE), #Impute using Seasonal Naive
+    Sales = na.aggregate(Sales, FUN = median, na.rm = TRUE) #Fall back to median by weekday
+  )  %>%
+  as_tsibble(key = Store, index = Date) %>% 
+  arrange(Date) %>%
+  as_tibble()
+
+```
+
+```{r}
+sunday_closed_imp %>% summarize(min(Date), max(Date))
+sunday_open_imp %>% summarize(min(Date), max(Date))
+```
+
+```{r}
+
+
+plot_random_stores <- function(trn, val, n = 9) {
+  rand_ids <- unique(val$Store) %>% sample(size = n)
+  
+  ggplot(aes(x = Date, y = Sales), data = sunday_closed_imp %>% filter(Store %in% rand_ids)) +
+    geom_line() +
+    geom_line(aes(color = "holdout"), data = val %>% filter(Store %in% rand_ids)) +
+    facet_wrap(~Store, scales = "free", nrow = 3)
+}
+
+plot_random_stores(sunday_open_imp, val_ds)
+```
+
+
+
+
+## Theta
+
+```{r}
+theta_check <- rossmann_ts_predictions(thetaf, h = 50)
+theta_check %>% create_submission_file("theta_local.csv")
+
+
+theta_log <- rossmann_ts_predictions_log(thetaf, h = 50)
+theta_log %>% create_submission_file("theta_log.csv")
+```
+
+## STLF
+```{r}
+stl_ets <- rossmann_ts_predictions(stlf, h = 50)
+stl_ets %>% create_submission_file("stl_ets.csv")
+
+stl_ets_log <- rossmann_ts_predictions_log(stlf, h = 50)
+stl_ets_log %>% create_submission_file("stl_ets_log.csv")
+```
+

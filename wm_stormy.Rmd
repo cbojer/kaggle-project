@@ -1,0 +1,87 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(data.table)
+
+trn <- fread("../../kaggle/walmart-stormy/train.csv")
+test <- fread("../../kaggle/walmart-stormy/test.csv")
+keys <- fread("../../kaggle/walmart-stormy/key.csv")
+weather <- fread("../../kaggle/walmart-stormy/weather.csv")
+
+trn %>% group_by(store_nbr, item_nbr) %>% summarize(min(date), max(date), n = n()) %>% arrange(desc(n)) %>% ungroup %>% summarize(min(n), max(n))
+```
+
+```{r}
+trn %>% bind_rows(test) %>% mutate(test = is.na(units)) %>% ggplot(aes(x = date, y = test)) + geom_point(aes(color = test)) + facet_wrap(~store_nbr)
+```
+
+```{r}
+relevant_ts <- trn %>% 
+  group_by(store_nbr, item_nbr) %>% 
+  summarize(
+    non_zero = sum(units != 0)
+  ) %>% 
+  filter(non_zero > 0) %>% 
+  mutate(id = str_c(store_nbr, item_nbr, sep = "_"))
+```
+
+```{r}
+red_trn <- trn %>% 
+  mutate(id = str_c(store_nbr, item_nbr, sep = "_")) %>% 
+  filter(id %in% relevant_ts$id) 
+
+```
+
+# Threecourse baseline (first place baseline)
+```{r}
+# calculate log1p
+df <- trn %>% group_by(store_nbr, item_nbr) %>% filter(sum(units) > 0)
+
+df$log1p <- log1p(df$units)
+
+# calculate days from 2012-01-01
+origin <- as.integer(floor(julian(as.POSIXlt('2012-01-01'))))
+df$date2j <- as.integer(floor(julian((as.POSIXlt(df$date))))) - origin
+
+# exclude 2013-12-25
+date_excl <- as.integer(floor(julian(as.POSIXlt('2013-12-25')))) - origin
+df <- df[df$date2j != date_excl, ]
+
+# for each item_nbr/store_nbrs, fitting by ppr function
+df_fitted <- data.frame(date2j=c(), sno=c(), ino=c())
+
+df$store_item_nbr <- df$item_nbr * 10000 + df$store_nbr
+
+store_item_nbrs <- df %>% distinct(item_nbr, store_nbr, store_item_nbr)
+
+rng <- 1:nrow(store_item_nbrs)
+
+for (i in 1:20) {
+  ino <- store_item_nbrs[i, "item_nbr"]
+  sno <- store_item_nbrs[i, "store_nbr"]
+  df0 <- df %>% filter(item_nbr == ino$item_nbr, store_nbr == sno$store_nbr)
+  df0.ppr <- ppr(log1p ~ date2j, data = df0, nterms=3, max.terms=5)
+  
+  df1 <- data.frame(date2j=0:1034, store_nbr=sno, item_nbr=ino)
+  df1$ppr_fitted <- predict(df0.ppr, df1)
+  
+  #plot(df0$date2j, df0$log1p, main=paste(c("result", ino, sno)))
+  #lines(newdf$date2j, newdf$gampred, col="red")
+  #lines(newdf$date2j, newdf$pprpred, col="blue")
+  
+  df_fitted <- rbind(df_fitted, df1)
+}
+
+
+df %>% left_join(df_fitted) %>% filter(!is.na(ppr_fitted)) %>% ggplot(aes(x = date2j, y = log1p)) + geom_line() + geom_line(aes(y = ppr_fitted, color = "bl")) + facet_wrap(store_nbr~item_nbr, scales = "free")
+```
+
+```{r}
+store_item_nbrs
+```
+
