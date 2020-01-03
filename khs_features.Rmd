@@ -5,320 +5,177 @@ output: document_md
 
 # Initilization
 ```{r, message=FALSE, warning=FALSE}
-## Clear Environment & Load Packages
-rm(list = ls()) ; gc()
+##### Clear Environment #####
+rm(list = ls())
+
+##### Load Packages #####
+
 library(magrittr)
-library(lubridate)
 library(data.table)
-library(tsfeatures)
-library(purrr)
-library(furrr)
+library(pbapply)
+library(imputeTS)
+library(feasts)
 library(ggfortify)
-library(tidyverse)
 library(forecast)
-library(tscompdata)
-library(M4comp2018)
 library(patchwork)
+library(qs)
 
-## Source Functions
-source("R/utils.R")
-source("R/prepdata.R")
-source("R/multiplot.R")
-```
+##### Source Functions #####
+source("./R/utils.R")
+source("./R/pc_plots.R")
 
-# Prepare Data Information
-```{r}
-data_dirs <- paste0(list.dirs("../Data")[-c(1,2)], "/combined.RDS")
-train_dirs <- list.files("./Cache/train_data", full.names = T)
-ids <- sapply(data_dirs, get_id)
-
-data_info <- tribble(
-  ~id,    ~data_dir,    ~train_dir,    ~group,                      ~target,         ~index,       ~ts_frequency,
-  ids[1], data_dirs[1], train_dirs[1], c("store_nbr", "item_nbr"),  "unit_sales",    "date",       c(365.25),
-  ids[2], data_dirs[2], train_dirs[2], c("air_store_id"),           "visitors",      "visit_date", c(7),
-  ids[3], data_dirs[3], train_dirs[3], c("store"),                  "sales",         "date",       c(365.25),
-  ids[4], data_dirs[4], train_dirs[4], c("store", "dept"),          "weekly_sales",  "date",       c(365.25/7),
-  ids[5], data_dirs[5], train_dirs[5], c("store_nbr", "item_nbr"),  "units",         "date",       c(365.25),
-  ids[6], data_dirs[6], train_dirs[6], c("page"),                   "views",         "date",       c(365.25)
-)       
+##### Collect Garbage #####
+invisible(gc())
 
 ```
 
-# Capture and prepare training data
+# Download Kaggle data
+# To use script you will need to accept competition rules at https://www.kaggle.com/c/<competition-name>/rules.
 ```{r, eval = FALSE}
-# favorita-grocery-sales-forecasting
-idx <- 1
-path <- data_dirs[idx]
-raw_data <- readRDS(path)
-original_train <- raw_data$train %>% janitor::clean_names()
-train <- as_dtts(original_train, group = data_info$group[[idx]], target = data_info$target[[idx]], index = data_info$index[[idx]], "train")
-rm(raw_data, original_train) ; gc()
-train[, c(attr(train, "self")$index) := parVec(x = get(attr(train, "self")$index), FUN = anytime::anydate)]
-save_path <- paste0("Cache/train_data/", get_id(path), ".RDS")
-saveRDS(train, save_path)
-rm(train) ; gc()
-
-# recruit-restaurant-visitor-forecasting
-idx <- 2
-path <- data_dirs[idx]
-raw_data <- readRDS(path)
-original_train <- raw_data$air_visit_data %>% janitor::clean_names()
-train <- as_dtts(original_train, group = data_info$group[[idx]], target = data_info$target[[idx]], index = data_info$index[[idx]], "train")
-rm(raw_data, original_train) ; gc()
-train[, c(attr(train, "self")$index) := parVec(x = get(attr(train, "self")$index), FUN = anytime::anydate)]
-save_path <- paste0("Cache/train_data/", get_id(path), ".RDS")
-saveRDS(train, save_path)
-rm(train) ; gc()
-
-# rossmann-store-sales
-idx <- 3
-path <- data_dirs[idx]
-raw_data <- readRDS(path)
-original_train <- raw_data$train %>% janitor::clean_names()
-train <- as_dtts(original_train, group = data_info$group[[idx]], target = data_info$target[[idx]], index = data_info$index[[idx]], "train")
-rm(raw_data, original_train) ; gc()
-train[, c(attr(train, "self")$index) := parVec(x = get(attr(train, "self")$index), FUN = anytime::anydate)]
-save_path <- paste0("Cache/train_data/", get_id(path), ".RDS")
-saveRDS(train, save_path)
-rm(train) ; gc()
-
-# walmart-recruiting-store-sales-forecasting
-idx <- 4
-path <- data_dirs[idx]
-raw_data <- readRDS(path)
-original_train <- raw_data$train %>% janitor::clean_names()
-train <- as_dtts(original_train, group = data_info$group[[idx]], target = data_info$target[[idx]], index = data_info$index[[idx]], "train")
-rm(raw_data, original_train) ; gc()
-train[, c(attr(train, "self")$index) := parVec(x = get(attr(train, "self")$index), FUN = anytime::anydate)]
-save_path <- paste0("Cache/train_data/", get_id(path), ".RDS")
-saveRDS(train, save_path)
-rm(train) ; gc()
-
-# walmart-storm-weather-competition
-idx <- 5
-path <- data_dirs[idx]
-raw_data <- readRDS(path)
-original_train <- raw_data$train %>% janitor::clean_names()
-train <- as_dtts(original_train, group = data_info$group[[idx]], target = data_info$target[[idx]], index = data_info$index[[idx]], "train")
-rm(raw_data, original_train) ; gc()
-train[, c(attr(train, "self")$index) := parVec(x = get(attr(train, "self")$index), FUN = anytime::anydate)]
-save_path <- paste0("Cache/train_data/", get_id(path), ".RDS")
-saveRDS(train, save_path)
-rm(train) ; gc()
-
-# web-traffic-time-series-forecasting
-idx <- 6
-path <- data_dirs[idx]
-raw_data <- readRDS(path)
-train1 <- melt(raw_data$train_1, id.vars = "Page", variable.name = "date", variable.factor = F, na.rm = TRUE, value.name = "views", verbose = T)
-train2 <- melt(raw_data$train_2, id.vars = "Page", variable.name = "date", variable.factor = F, na.rm = TRUE, value.name = "views", verbose = T)
-original_train <- rbind(train11, train22) %>% janitor::clean_names()
-train <- as_dtts(original_train, group = data_info$group[[idx]], target = data_info$target[[idx]], index = data_info$index[[idx]], "train")
-rm(raw_data, original_train) ; gc()
-train[, views := as.integer(views)]
-train[, page := as.factor(page)]
-train[, c(attr(train, "self")$index) := parVec(x = get(attr(train, "self")$index), FUN = anytime::anydate)]
-save_path <- paste0("Cache/train_data/", get_id(path), ".RDS")
-saveRDS(train, save_path)
-rm(train) ; gc()
-
-```
-
-# Extract Kang, Hyndman, Smith Features from Kaggle Competitions
-```{r, eval = FALSE}
-for(idx in 1:nrow(data_info)) {
-  idx <- 2
-  print(sprintf("Extracting KHS features from %s", data_info$id[[idx]]))
-  
-  # Load & prepare data
-  path <- data_info$train_dir[[idx]]
-  train <- readRDS(path)
-  train[is.na(get(data_info$target[[idx]])), c(data_info$target[[idx]]) := 0]
-  train[get(data_info$target[[idx]]) < 0, c(data_info$target[[idx]]) := 0]
-  
-  # Set key and index
-  setkeyv(train, data_info$group[[idx]])
-  setindexv(train, data_info$index[[idx]])
-  
-  # Extract features
-  tictoc::tic("Collect Time Series Features")
-  khs_feats <- khs_ts_features(.data = train,
-                               target = data_info$target[[idx]],
-                               group = data_info$group[[idx]],
-                               index = data_info$index[[idx]],
-                               frequency = data_info$ts_frequency[[idx]],
-                               parallel = T)
-  tictoc::toc()
-  
-  # Save result
-  saveRDS(cbind(id = data_info$id[[idx]], khs_feats), paste0("./Results/khs_features/", data_info$id[[idx]], ".rds"))
-  
-  # Cleanup
-  rm(train, khs_feats) ; gc()
+if(.Platform$OS.type == "unix") {
+  system("./Munge/00\\ -\\ Download\\ raw\\ kaggle\\ data.sh")
+} else {
+  shell("./Munge/00\\ -\\ Download\\ raw\\ kaggle\\ data.sh")
 }
 
+####### Prepare Data Information #######
+data_info <-  data.table(
+  id = sub(".zip", "", list.files("./Data/Raw_Data")),
+  raw_data_dir = list.files("./Data/Raw_Data", full.names = TRUE),
+  train_data = list("train", "air_visit_data", "train", "train", "train", c("train_1", "train_2")),
+  test_data = c("test", NA, "test", NA, "test", NA),
+  group = list(c("store_nbr", "item_nbr"), c("air_store_id"), c("store"), c("store_nbr", "item_nbr"), c("store", "dept"), c("page")),
+  target = c("unit_sales", "visitors", "sales", "units", "weekly_sales", "views"),
+  index = c("date", "visit_date", "date", "date", "date", "date"),
+  ts_frequency = c(7, 7, 7, 7, 52, 7)
+)
 ```
 
-# Extract Kang, Hyndmad, Smith Features from M* Competitions
+# Restructure Kaggle Data from Multiple "XX.CSV" files to Single "Combined.RDS" file 
+```{r, eval=FALSE}
+
+####### Initiate Control Parameters #######
+restructured_write_path <- "./Data/Restructured/"
+
+####### Source Batch Assembly Script #######
+rstudioapi::jobRunScript(path = "./Munge/01 - Assemble Kaggle Data to Combined RDS File.R", workingDir = getwd(), importEnv = TRUE)
+
+```
+
+# Run Preprocessing Script
+```{r, eval=FALSE}
+
+####### Initiate Control Parameters #######
+data_info[, restructured_data_path := list.files("./Data/Restructured", full.names = T)]
+processed_training_save_path <- "./Data/Processed/"
+imputation_method <- imputeTS::na_seasplit
+
+####### Source Preprocessing Script #######
+rstudioapi::jobRunScript(path = "./Munge/02 - Preprocess Data.R", workingDir = getwd(), importEnv = TRUE)
+
+```
+
+# Extract Kang, Hyndman, Smith Features from Kaggle and M Competitions
 ```{r, eval = FALSE}
-# Load data
-M3 <- Mcomp::M3
-data(M4)
 
-# Extract KHS Features
-library(parallel)
-cl <- parallel::makeCluster(parallel::detectCores())
-parallel::clusterExport(cl, "get_khs_feats")
-M3_feats <- rbindlist(pbapply::pblapply(M3, function(x) get_khs_feats(x$x), cl = cl))
-M4_feats <- rbindlist(pbapply::pblapply(M4, function(x) get_khs_feats(x$x), cl = cl))
-parallel::stopCluster(cl)
+####### Initiate Control Parameters #######
+processed_data_paths <- list.files("./Data/Processed", full.names = T)
+khs_feat_save_path <- "./Results/khs_features/"
+khs_retry_save_path <- "./Cache/khs_retry/"
+khs_number_of_retry <- 3
+khs_plot_save_path <- "./Figures/"
+# Use adjusted frequency: Daily = 7; Weekly = 52
+adjusted_weekly_daily_frequency <- TRUE
+# Include `Frequency`in prcomp / plot
+include_frequency <- FALSE
 
-# Season is NA when Frequency == 1, i.e., yearly
-M3_feats[is.na(Season), Season := 0]
-M4_feats[is.na(Season), Season := 0]
+####### Extract and Plot KHS Features #######
+rstudioapi::jobRunScript(path = "./Munge/03 - Extract KHS Features.R", workingDir = getwd(), importEnv = TRUE)
+rstudioapi::jobRunScript(path = "./Munge/04 - Plot KHS Features.R", workingDir = getwd(), importEnv = TRUE)
 
-# Save results
-saveRDS(cbind(id = "M3", M3_feats), "Results/khs_features/M3.rds")
-saveRDS(cbind(id = "M4", M4_feats), "Results/khs_features/M4.rds")
+# With frequency: Daily = 1, Weekly = 1
+adjusted_weekly_daily_frequency <- FALSE
+
+rstudioapi::jobRunScript(path = "./Munge/03 - Extract KHS Features.R", workingDir = getwd(), importEnv = TRUE)
+rstudioapi::jobRunScript(path = "./Munge/04 - Plot KHS Features.R", workingDir = getwd(), importEnv = TRUE)
+
 ```
 
+# SBC Classification
+```{r, eval = FALSE}
 
-# Explore M* Features
-```{r, fig.width=10}
-M3_feats <- readRDS("Results/khs_features/M3.rds")
-M4_feats <- readRDS("Results/khs_features/M4.rds")
+####### Initiate Control Parameters #######
+processed_data_paths <- list.files("./Cache/processed_training_data/", full.names = T)
+sbc_save_path <- "./Results/sbc_class/"
 
-p1 <- prcomp(select(M3_feats, -Period, -id), scale=TRUE)$x %>%
-  as_tibble() %>%
-  bind_cols(Period=M3_feats$Period) %>%
-  ggplot(aes(x=PC1, y=PC2)) +
-  geom_point(aes(col=Period)) +
-  labs(title = "M3 Features")
+####### Source SBC Classification Script #######
+rstudioapi::jobRunScript(path = "./Munge/05 - Extract SBC Classification.R", workingDir = getwd(), importEnv = TRUE)
 
-p2 <- prcomp(select(M4_feats, -Period, -id), scale=TRUE)$x %>%
-  as_tibble() %>%
-  bind_cols(Period=M4_feats$Period) %>%
-  ggplot(aes(x=PC1, y=PC2)) +
-  geom_point(aes(col=Period)) +
-  labs(title = "M4 Features")
-
-multiplot(p1, p2, cols = 2)
 ```
-
 
 ```{r}
-# Load KHS features
-feature_files <- list.files("Results/khs_features/", full.names = T)
-all_features <- rbindlist(lapply(feature_files, readRDS))
 
-# Investigate % of rows that contain NA's
-all_features[, .("Rows with NA" = scales::percent(sum(complete.cases(.SD))/.N)), id]
+sbc_save_path <- "./Results/sbc_class/"
+sbc_plot_save_path <- "./Figures/"
 
-# Fill NA's with 0
-num_cols <- which(sapply(all_features, is.numeric))
-setnafill(all_features, fill = 0, cols = num_cols)
+all_sbc_classes <- rbindlist(lapply(list.files(sbc_save_path, full.names = T), readRDS))
 
-# Sort data by ID
-setkey(all_features, "id")
+all_sbc_classes[, id := dplyr::case_when(id == "favorita-grocery-sales-forecasting" ~ "Corporacion Favorita",
+                                         id == "recruit-restaurant-visitor-forecasting" ~ "Recruit Restaurant",
+                                         id == "rossmann-store-sales" ~ "Rossmann",
+                                         id == "walmart-recruiting-store-sales-forecasting" ~ "Walmart Store Sales",
+                                         id == "walmart-recruiting-sales-in-stormy-weather" ~ "Walmart Stormy Weather",
+                                         id == "web-traffic-time-series-forecasting" ~ "Wikipedia",
+                                         TRUE ~ id)]
 
-# Adjust frequency for recruit-restaurant-visitor-forecasting
-all_features[id == "recruit-restaurant-visitor-forecasting", Frequency := 365]
-all_features[id == "recruit-restaurant-visitor-forecasting", Period := as.factor(365)]
-all_features[, Period := as.factor(as.character(Period))]
+# Examine length of failed classifications
+all_sbc_classes[!complete.cases(all_sbc_classes), .(Unique_Length = unique(N), N_Series = .N), id]
 
-# Adjust ID's
-all_features[, id := case_when(id == "favorita-grocery-sales-forecasting" ~ "Corporación Favorita",
-                               id == "recruit-restaurant-visitor-forecasting" ~ "Recruit Restaurant",
-                               id == "rossmann-store-sales" ~ "Rossmann",
-                               id == "walmart-recruiting-store-sales-forecasting" ~ "Walmart",
-                               id == "walmart-storm-weather-competition" ~ "Walmart Stormy Weather",
-                               id == "web-traffic-time-series-forecasting" ~ "Wikipedia",
-                               TRUE ~ id)]
-
-all_features$id %>% unique
-
+all_sbc_classes[, .("ADI > 1"  = scales::percent(sum(ADI > 1, na.rm = T)/.N, .01)), id]
+```
+```{r}
+hex_patchwork <- wrap_plots(a=pc_hex_plots$M3,                    
+                            b=pc_hex_plots$M4,                       
+                            c=pc_hex_plots$`Corporacion Favorita`,
+                            d=pc_hex_plots$`Recruit Restaurant`,  
+                            e=pc_hex_plots$loadings,                 
+                            f=pc_hex_plots$Rossmann,
+                            g=pc_hex_plots$Walmart,               
+                            h=pc_hex_plots$`Walmart Stormy Weather`, 
+                            i=pc_hex_plots$Wikipedia)
+names(pc_hex_plots)
+plot.data$id %>% unique()
 ```
 
-
+In all cases where classification failed, the series length == 1
 
 ```{r}
-pc_obj <- prcomp(select(all_features, -Period, -id), scale=TRUE)
-
-plot.data <- pc_obj$x %>% 
-  as_tibble() %>%
-  bind_cols(id = all_features$id)
-
-plot.xlims <- c(min(plot.data$PC1) %>% floor(),
-                max(plot.data$PC1) %>% ceiling())
-
-plot.ylims <- c(min(plot.data$PC2) %>% floor(),
-                max(plot.data$PC2) %>% ceiling())
-
-unique_ids <- unique(plot.data$id)
-color_scheme <- ggthemes::ptol_pal()(length(unique_ids))
-unique_cols <- sapply(unique_ids, function(x) {
-  color_scheme[grep(eval(x), unique_ids)][1]
-})
-
-pc_plots <- sapply(unique_ids, function(x) {
-  tmp <- plot.data %>%
-    filter(id == eval(x))
-  
-  tmp %>%
-    ggplot(aes(x=PC1, y=PC2)) +
-    geom_point(colour = unique_cols[eval(x)], alpha = 0.1) +
-    theme_bw(base_size = 12) +
-    theme(axis.title.x = element_blank(), 
-          axis.title.y = element_blank(),
-          axis.text.x = element_blank(),
-          axis.text.y = element_blank(),
-          axis.ticks = element_blank()) +
-    xlim(plot.xlims) + ylim(plot.ylims) +
+sbc_point_plot <- function(.data) {
+  .data[complete.cases(.data)] %>%
+    ggplot(aes(ADI, CV2)) +
+    geom_vline(xintercept = 1.32) + # ADI Threshold
+    geom_hline(yintercept = 0.49) + # CV2 Threshold
+    geom_point(na.rm = T, alpha = 0.5) +
+    scale_y_log10() + scale_x_log10() +
     facet_wrap(~id)
-  
-}, USE.NAMES = TRUE, simplify = FALSE)
+}
 
-loading.data <- pc_obj$rotation %>%
-  as_tibble(rownames = "rn")
+sbc_point_plot(all_sbc_classes)
 
-loading.xlims <- c(min(loading.data$PC1*3) %>% floor(),
-                   max(loading.data$PC1*3) %>% ceiling())
+sbc_box_plot <- function(.data) {
+  .data[complete.cases(.data), ] %>%
+    ggplot(aes(x = id, y = ADI)) +
+    geom_boxplot() +
+    scale_y_log10() +
+    #facet_wrap(~id, scales = "free_y") +
+    theme_bw() +
+    theme(axis.title.y = element_blank()) +
+    labs(y = "Log10( Average Demand Interval )") +
+    coord_flip()
+}
 
-loading.ylims <- c(min(loading.data$PC2*3) %>% floor(),
-                   max(loading.data$PC2*3) %>% ceiling())
+sbc_box_plot(all_sbc_classes)
 
-pc_plots[["loadings"]] <- loading.data %>%
-  ggplot() +
-  geom_segment(aes(x = 0, y = 0, xend = PC1*2.5, yend = PC2*2.5),
-               arrow = grid::arrow(length = grid::unit(8, "points"), type = "closed"),
-               col = "firebrick") +
-  geom_text(aes(x = PC1*3, y = PC2*3, label = rn), col = "firebrick") +
-  xlim(loading.xlims) + ylim(loading.ylims) +
-  theme_bw(base_size = 12) +
-  theme(axis.title.x = element_blank(), 
-        axis.title.y = element_blank(),
-        axis.text.x = element_blank(),
-        axis.text.y = element_blank(),
-        axis.ticks = element_blank()) +
-  facet_wrap(~"Loadings")
-
-layout <- 'yabc \n ydef \n yghi \n xxxx'
-
-var_exp <- pc_obj$sdev^2/sum(pc_obj$sdev^2)
-var_exp <- var_exp[c(1,2)]
-labs <- paste0(paste0("PC", 1:2), " (", scales::percent(var_exp), ")")
-
-x_lab <- textGrob(labs[1], hjust = 0.5)
-y_lab <- textGrob(labs[2], rot = 90, vjust = 0.5)
-
-patchwork <- wrap_plots(a=pc_plots$M3,                    b=pc_plots$M4,                       c=pc_plots$`Corporación Favorita`,
-                        d=pc_plots$`Recruit Restaurant`,  e=pc_plots$loadings,                 f=pc_plots$Rossmann,
-                        g=pc_plots$Walmart,               h=pc_plots$`Walmart Stormy Weather`, i=pc_plots$Wikipedia,
-                        x = x_lab, y = y_lab) +
-  plot_layout(ncol = 4, nrow = 4, widths = c(0.1, 1, 1, 1), heights = c(1, 1, 1, 0.1), design = layout)
-
-patchwork
-
-ggsave("plots/khs_features.png", patchwork, width = 12, height = 10)
 ```
+
 
