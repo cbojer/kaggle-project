@@ -460,3 +460,10 @@ hpg %>% left_join(air_hpg) %>% full_join(air)
 wm_train 
 ```
 
+```{r}
+favorita <- fread("~/kaggle/favorita/train.csv")
+favoritat <- fread("~/kaggle/favorita/test.csv")
+favoritat %>% mutate(date = ymd(date)) %>%  summarize(min(date), max(date))
+```
+  
+  

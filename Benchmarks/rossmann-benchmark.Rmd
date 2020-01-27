@@ -15,6 +15,49 @@ train <- fread("~/kaggle/rossmann/train.csv") %>% mutate(Date = ymd(Date))
 test <- fread("~/kaggle/rossmann/test.csv") %>% mutate(Date = ymd(Date))
 ```
 
+#Benchmarks
+
+## Naive
+```{r}
+naive <- train %>% group_by(Store) %>% top_n(n = 1, wt = Date) %>% select(Store, Sales)
+
+test %>%
+  left_join(naive, by = c("Store")) %>%
+  mutate(
+    Open = replace_na(Open, 1L),
+    Sales = if_else(Open == 0, 0L, Sales)
+  ) %>%
+  select(Id, Sales) %>% 
+  write.csv("rossmann_naive_by_store.csv", row.names = F)
+```
+
+## Seasonal Naive
+```{r}
+seasonal_naive <- train %>% group_by(Store, DayOfWeek) %>% top_n(n = 1, wt = Date) %>% select(Store, DayOfWeek, Sales)
+
+test %>%
+  left_join(seasonal_naive, by = c("Store", "DayOfWeek")) %>%
+  mutate(
+    Open = replace_na(Open, 1L),
+    Sales = if_else(Open == 0, 0L, Sales)
+  ) %>%
+  select(Id, Sales) %>% 
+  write.csv("rossmann_seasonal_naive_by_store.csv", row.names = F)
+```
+
+### Seasonal Naive Promo
+```{r}
+seasonal_naive_promo <- train  %>% group_by(Store, DayOfWeek, Promo) %>% top_n(n = 1, wt = Date) %>% select(Store, DayOfWeek, Promo, Sales)
+test %>%
+  left_join(seasonal_naive_promo, by = c("Store", "DayOfWeek", "Promo")) %>%
+  mutate(
+    Open = replace_na(Open, 1L),
+    Sales = if_else(Open == 0, 0L, Sales)
+  ) %>%
+  select(Id, Sales) %>% 
+  write.csv("rossmann_seasonal_naive_by_store_promo.csv", row.names = F)
+```
+
 
 
 
@@ -146,10 +189,7 @@ create_submission_file <- function(results, path) {
 }
 ```
 
-```{r}
 
-test %>% summarize(min(Date), max(Date), n_distinct(Date))
-```
 
 ```{r}
 train %>% summarize(min(Date), max(Date))
@@ -211,8 +251,6 @@ sunday_open_imp %>% summarize(min(Date), max(Date))
 ```
 
 ```{r}
-
-
 plot_random_stores <- function(trn, val, n = 9) {
   rand_ids <- unique(val$Store) %>% sample(size = n)
   
