@@ -1,22 +1,29 @@
 
-# Parallized Vector Apply -------------------------------------------------
-
-parVec <- function(cl = NULL, x, FUN, ...) {
-  if (is.null(cl)) {
-    cl <- parallel::makeCluster(parallel::detectCores())
-    on.exit(parallel::stopCluster(cl))
-  }
-  n <- length(cl)
-  s <- lapply(parallel::splitIndices(length(x), ncl = n), function(idx) x[idx])
-  r <- parallel::parLapply(cl, s, FUN, ...)
-  do.call("c", r)
-}
-
 # Get Load ID -------------------------------------------------------------
 
 get_id <- function(path) {
   s <- unlist(strsplit(path, "/"))
   s[length(s)-1]
+}
+
+# Trim Leading & Trailing Zero's ------------------------------------------
+
+trimlt <- function(.data, target = NULL) {
+  if(inherits(.data, "data.frame") && !is.null(target)) {
+    x <- as.data.frame(.data)[, eval(substitute(target))]
+    non_zero <- which(x > 0)
+    return(.data[non_zero[1]:non_zero[length(non_zero)], ])
+  } else if(is.vector(.data) && is.numeric(.data)) {
+    x <- .data
+    non_zero <- which(x > 0)
+    return(x[non_zero[1]:non_zero[length(non_zero)]])
+  }
+}
+
+# Get sequence from min to max of x ---------------------------------------
+
+minmax_sequence <- function(x, interval = 1) {
+  seq(min(x), max(x), interval)
 }
 
 # Object Size formatted ---------------------------------------------------
@@ -73,87 +80,84 @@ getmode <- function(x) {
   uniqv[which.max(tabulate(match(x, uniqv)))]
 }
 
-# Time Series Features ----------------------------------------------------
-
-make_ts <- function(x, frequency, target, index) {
-  y <- x[, get(target)]
-  if(any(y == 0)) y <- y + 0.0000000001
-  suppressor(forecast::msts(y, seasonal.periods = frequency))
-}
-
-tsfeats <- function(x, ...) {
-  feats <- suppressor(tsfeatures::tsfeatures(x, ...))
-  idx <- grep("^seasonal_period|^nperiods", names(feats))
-  as.data.table(feats[, -idx])
-}
-
-ts_features <- function(.data, target, group, index, frequency, parallel = TRUE, ...) {
-  FUN <- ifelse(parallel, furrr::future_map, base::lapply)
-  if(!is.data.table(.data)) setDT(.data)
-  tsib <- .data[, .(data = list(.SD)), c(group)]
-  tsib[, ts := lapply(data, make_ts, frequency = frequency, target = target, index = index)]
-  tsib[, feats := FUN(ts, possibly(tsfeats, NA), ...)]
-  tsib[, check := sapply(feats, is.logical)]
-  feats <- tsib[check == FALSE, unlist(feats, recursive = F), c(group)]
-  feats
-}
-
-
 # KHS Time Series Features ------------------------------------------------
 
-get_khs_feats <- function(x, fill_na = NULL) {
-  if(any(x == 0)) x <- x + 0.00001
-  if(any(x < 0)) x[x < 0] <- 0.00001
-  freq <- stats::frequency(tsfeatures:::scalets(x))
-  ent <- tsfeatures::entropy(tsfeatures:::scalets(x))
-  lambda <- forecast::BoxCox.lambda(x, lower = 0, upper = 1, method = "loglik")
-  y <- forecast::BoxCox(x, lambda)
-  stl_feats <- try(tsfeatures::stl_features(y, s.window = "periodic", robust = TRUE))
-  name_check <- !c("trend", "seasonal_strength", "e_acf1") %in% names(stl_feats)
-  if(any(name_check)) {
-    missing_cols <- c("trend", "seasonal_strength", "e_acf1")[name_check]
-    for(col in missing_cols) {
-      stl_feats[col] <- NA
+calculate_khs_feats <- function(x, use_dw_frequency = TRUE) {
+  # Required Packages
+  require(forecast, quietly = TRUE)
+  require(feasts, quietly = TRUE)
+  require(data.table, quietly = TRUE)
+  
+  # Assert that 'x' is ts
+  if(!is.ts(x)) {
+    stop("x must be a time series, class(x) == 'ts'")
+  }
+  
+  # Calculate length of time series
+  N <- length(x)
+  
+  # Adjust time series to correct frequency
+  if(isTRUE(use_dw_frequency)) {
+    freq <- frequency(x)
+    timeseries <- x
+  } else {
+    freq <- frequency(x)
+    if(frequency(x) == 7 | frequency(x) == 52) {
+      timeseries <- ts(x, frequency = 1)
+      freq <- 1
+    } else {
+      timeseries <- x
     }
   }
-  if(is.element("try-error", class(stl_feats))) {
-    stl_feats <- c("trend" = NA_real_, "seasonal_strength" = NA_real_, "e_acf1" = NA_real_)
-  }
-  out <- data.table::data.table(Frequency = as.double(freq),
-                                Entropy = as.double(ent),
-                                Trend = as.double(stl_feats[["trend"]]),
-                                Season = as.double(stl_feats[["seasonal_strength"]]),
-                                ACF1 = as.double(stl_feats[["e_acf1"]]),
-                                Lambda = as.double(lambda),
-                                Period = as.factor(freq))
-  if(!is.null(fill_na)) {
-    data.table::setnafill(out, fill = fill_na, cols = c("Frequency", "Entropy", "Trend", "Season", "ACF1", "Lambda"))
-  }
-  out
-}
-
-khs_ts_features <- function(.data, target, group, index, frequency, parallel = TRUE, fill_na = NULL) {
-  if(!is.data.table(.data)) setDT(.data)
-  tsib <- .data[, .(data = list(.SD)), c(group)]
-  tsib[, ts := lapply(data, make_ts, frequency = frequency, target = target, index = index)]
-  if(parallel) {
-    cl <- parallel::makeCluster(parallel::detectCores())
-    on.exit(parallel::stopCluster(cl))
-    parallel::clusterExport(cl, "get_khs_feats")
-    tsib[, feats := pbapply::pblapply(cl = cl, X = ts, FUN = get_khs_feats, fill_na = fill_na)]
+  
+  # Calculate Features
+  lambda <- try(forecast::BoxCox.lambda(timeseries + 0.000001, lower = 0, upper = 1, method = "loglik")) # Zero values result in error, hence add '0.000001'
+  stl_feats <- try(feasts::feat_stl(timeseries, .period = freq))
+  acf_feats <- try(feasts::feat_acf(timeseries, .period = freq))
+  spectral_feats <- try(feasts::feat_spectral(timeseries))
+  
+  
+  # Pull Features of Interest
+  if(!is.element("try-error", class(lambda))) {
+    lambda <- lambda
   } else {
-    tsib[, feats := lapply(ts, get_khs_feats, fill_na = fill_na)]
+    lambda <- NA_real_
   }
-  tsib[, rbindlist(feats)]
-}
-
-prplot <- function(feats) {
-  pcs <- prcomp(select(feats, -c(Period, Frequency)), scale=TRUE)$x
-  pcs %>%
-    as_tibble() %>%
-    bind_cols(Period=feats$Period) %>%
-    ggplot(aes(x=PC1, y=PC2)) +
-    geom_point(aes(col=Period))
+  if(!is.element("try-error", class(stl_feats))) {
+    trend <- stl_feats[grep("^trend_strength", names(stl_feats))]
+    season <- stl_feats[grep("^seasonal_strength", names(stl_feats))]
+  } else {
+    trend <- NA_real_
+    season <- NA_real_
+  }
+  if(!is.element("try-error", class(acf_feats))) {
+    acf1 <- acf_feats[grep("^acf1", names(acf_feats))][1]
+  } else {
+    acf1 <- NA_real_
+  }
+  if(!is.element("try-error", class(spectral_feats))) {
+    entropy <- spectral_feats[grep("^spectral_entropy", names(spectral_feats))]
+  } else {
+    entropy <- NA_real_
+  }
+  
+  # If frequency == 1, season estimation will fail, hence we set this to 0.
+  if(freq == 1) {
+    season <- 0
+  }
+  
+  # Assemble Result
+  data.table::data.table(
+    "N" = N,
+    "Frequency" = freq,
+    "Entropy" = entropy,
+    "Trend" = trend,
+    "Season" = season,
+    "ACF1" = acf1,
+    "Lambda" = lambda,
+    "Period" = as.factor(freq)
+  )
+  
 }
 
 # Mean Fill ---------------------------------------------------------------
@@ -180,6 +184,30 @@ ts_summary <- function(.data, target, group, frequency) {
        "plot" = .new_data_plot)
 }
 
+
+# Get SBC Classification --------------------------------------------------
+
+sbc_classifier <- function(x) {
+  N <- length(x)
+  tmp <- x[!is.na(x)]
+  nzd <- which(tmp != 0)
+  z <- tmp[nzd]
+  ADI = mean(c(nzd[1], diff(nzd)))
+  CV2 = (sd(z) / mean(z))^2
+  
+  if(anyNA(c(ADI, CV2))) {
+    return(list("N" = N, "ADI" = NA_real_, "CV2" = NA_real_, "Class" = NA_character_))
+  } else if(ADI <= 1.32 && CV2 <= 0.49) {
+    return(list("N" = N,"ADI" = ADI, "CV2" = CV2, "Class" = "Smooth"))
+  } else if(ADI > 1.32 && CV2 <= 0.49) {
+    return(list("N" = N,"ADI" = ADI, "CV2" = CV2, "Class" = "Intermittent"))
+  } else if(ADI <= 1.32 && CV2 > 0.49) {
+    return(list("N" = N,"ADI" = ADI, "CV2" = CV2, "Class" = "Erratic"))
+  } else {
+    return(list("N" = N,"ADI" = ADI, "CV2" = CV2, "Class" = "Lumpy"))
+  }
+}
+
 # Get Principal Components ------------------------------------------------
 
 get_pcs <- function(.data, group, ...) {
@@ -187,4 +215,13 @@ get_pcs <- function(.data, group, ...) {
   .new_data <- .data[, target_names, with = F]
   .new_data[, lapply(.SD, mean_fill)] %>%
     prcomp(...)
+}
+
+prplot <- function(feats) {
+  pcs <- prcomp(select(feats, -c(Period, Frequency)), scale=TRUE)$x
+  pcs %>%
+    as_tibble() %>%
+    bind_cols(Period=feats$Period) %>%
+    ggplot(aes(x=PC1, y=PC2)) +
+    geom_point(aes(col=Period))
 }
