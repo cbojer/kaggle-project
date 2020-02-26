@@ -27,7 +27,7 @@ lb_data <- map2_dfr(
   c("RossmannLB", "WikiLB", "RecruitLB", "FavoritaLB", "Walmart1LB", "Walmart2LB"),
   c("Rossmann", "Wikipedia", "Recruit", "Favorita", "Walmart1", "Walmart2"),
   ~read_excel(
-    "Writings/Leaderboard.xlsx", 
+    "Data/Leaderboard.xlsx", 
     sheet = .x,
     col_names = c("place", "pub", "team", "notebook", "members", "score", "entries", "last"), 
     col_types = c("numeric", "text", "text", "text", "text", "numeric", "numeric", "text"),
@@ -41,7 +41,7 @@ lb_data <- map2_dfr(
   )
 
 # Load Benchmark Performance (from Late Submissions to Kaggle)
-benchmarks <- read_excel("Benchmarks/benchmarks-perf.xlsx") %>% rename(comp = CompId, score = Score) %>% mutate(place = NA)
+benchmarks <- read_excel("Data/benchmarks-perf.xlsx") %>% rename(comp = CompId, score = Score) %>% mutate(place = NA)
 
 
 # Relative Error -----------------------------------------------------------------------------------------------------------------
