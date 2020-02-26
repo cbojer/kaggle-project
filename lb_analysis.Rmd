@@ -11,7 +11,7 @@ library(purrr)
 ```
 
 ```{r}
-map2_dfr(
+lb_data <- map2_dfr(
   c("RossmannLB", "WikiLB", "RecruitLB", "FavoritaLB", "Walmart1LB", "Walmart2LB"),
   c("Rossmann", "Wikipedia", "Recruit", "Favorita", "Walmart1", "Walmart2"),
   ~read_excel(
@@ -22,13 +22,79 @@ map2_dfr(
     skip = 1, 
   ) %>% 
   mutate(comp = .y)
-  ) %>% 
-  group_by(comp) %>% 
-  mutate(pct_diff = (score - min(score))/min(score)*100) %>% 
-  ggplot(aes(x = place, y = pct_diff)) + geom_point() + facet_wrap(~comp, scales = "free_y") +
+) %>% 
+  mutate(score = if_else(comp == "Walmart1", score / 100000, score),
+         score = if_else(comp == "Wikipedia", score / 100000, score))
+ 
+benchmarks <- read_excel("Benchmarks/benchmarks-perf.xlsx") %>% rename(comp = CompId, score = Score) %>% mutate(place = NA)
+
+lb_data %>% 
+  ggplot(aes(x = place, y = score)) + geom_point() + facet_wrap(~comp, scales = "free_y") +
+  geom_hline(aes(yintercept = score, color = Benchmark), data = benchmarks) +
+  scale_y_log10() +
   xlab("Placement") +
   ylab("Performance difference from Winner (%)")
-  
 
+```
+
+```{r}
+
+lb_data %>% 
+  group_by(comp) %>% 
+  mutate(pct_diff = (score - min(score))/score*100) %>% 
+  ggplot(aes(x = place, y = pct_diff)) + geom_point() + facet_wrap(~comp) +
+  xlab("Placement") +
+  ylab("Performance difference from Winner (%)")
+
+```
+
+
+```{r}
+top25 <- lb_data %>% 
+  filter(place <= 25) %>% 
+  group_by(comp) %>%
+  mutate(pct_diff = (score - min(score))/min(score)*100)
+
+top25 %>%
+  ggplot(aes(x = place, y = pct_diff)) + geom_point() + facet_wrap(~comp) +
+  xlab("Placement") +
+  ylab("Performance difference from Winner (%)")
+
+```
+
+```{r}
+top25 %>% 
+  filter(place == 25) %>% 
+  select(comp, pct_diff)
+```
+
+```{r}
+top25 %>% 
+  group_by(comp) %>% 
+  mutate(rel_err = (score / max(score)) %>% round(digits = 2)) %>% 
+  filter(place == 1) %>%
+  select(comp, rel_err)
+```
+
+
+```{r}
+library(tidyr)
+
+bm_clean <- benchmarks %>% spread(key = Benchmark, value = score) %>%
+  select(-place)
+
+lb_data %>% 
+  filter(place %in% c(1, 50)) %>%
+  left_join(bm_clean, by = "comp") %>%
+  mutate(
+    Naive = score / Naive,
+    SNaive = score / `Seasonal Naive`
+  ) %>%
+  select(Competition, place, Naive, SNaive) %>%
+  gather(key = method, value = RelError, Naive, SNaive) %>%
+  spread(key = place, value = RelError) %>%
+  mutate_at(vars(`1`, `50`), ~round(., digits = 2)) %>%
+  rename(`Rel. Error 1st` = `1`, `Rel. Error 50th` = `50`) 
+  
 ```
 
