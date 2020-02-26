@@ -1,6 +1,7 @@
 .Rhistory
 .Rproj.user
 Cache/
+Data/
 plots/test.js
 test.js
 Benchmarks/*.csv
