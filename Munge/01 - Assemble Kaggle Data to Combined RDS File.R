@@ -15,7 +15,7 @@ zip_info <- lapply(zip_info, function(x) if(any("Name" %in% names(x))) x[grepl("
 # Remove test.csv from Stormy weather competition. This requires password.
 #stormy <- zip_info[[grep("stormy", names(zip_info))]]
 #zip_info[[grep("stormy", names(zip_info))]] <- stormy[!grepl("test", stormy$Name), ]
-i <- 4
+
 # Initiate Assembly Loop --------------------------------------------------
 
 for (i in seq_along(file_paths)) {

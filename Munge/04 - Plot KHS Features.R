@@ -178,19 +178,31 @@ if(isTRUE(adjusted_weekly_daily_frequency)) {
     ggsave(paste0(save_path, "khs_feature_point_adj_with_freq.png"), patchworks$Point, width = 12, height = 10)
     ggsave(paste0(save_path, "khs_feature_hexagons_adj_with_freq.png"), patchworks$Hex, width = 12, height = 10)
     ggsave(paste0(save_path, "khs_feature_densities_adj_with_freq.png"), patchworks$Density, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_point_adj_with_freq.pdf"), patchworks$Point, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_hexagons_adj_with_freq.pdf"), patchworks$Hex, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_densities_adj_with_freq.pdf"), patchworks$Density, width = 12, height = 10)
   } else {
     ggsave(paste0(save_path, "khs_feature_point_adj.png"), patchworks$Point, width = 12, height = 10)
     ggsave(paste0(save_path, "khs_feature_hexagons_adj.png"), patchworks$Hex, width = 12, height = 10)
     ggsave(paste0(save_path, "khs_feature_densities_adj.png"), patchworks$Density, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_point_adj.pdf"), patchworks$Point, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_hexagons_adj.pdf"), patchworks$Hex, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_densities_adj.pdf"), patchworks$Density, width = 12, height = 10)
   }
 } else {
   if(isTRUE(include_frequency)) {
     ggsave(paste0(save_path, "khs_feature_point_orig_with_freq.png"), patchworks$Point, width = 12, height = 10)
     ggsave(paste0(save_path, "khs_feature_hexagons_orig_with_freq.png"), patchworks$Hex, width = 12, height = 10)
     ggsave(paste0(save_path, "khs_feature_densities_orig_with_freq.png"), patchworks$Density, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_point_orig_with_freq.pdf"), patchworks$Point, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_hexagons_orig_with_freq.pdf"), patchworks$Hex, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_densities_orig_with_freq.pdf"), patchworks$Density, width = 12, height = 10)
   } else {
     ggsave(paste0(save_path, "khs_feature_point_orig.png"), patchworks$Point, width = 12, height = 10)
     ggsave(paste0(save_path, "khs_feature_hexagons_orig.png"), patchworks$Hex, width = 12, height = 10)
     ggsave(paste0(save_path, "khs_feature_densities_orig.png"), patchworks$Density, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_point_orig.pdf"), patchworks$Point, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_hexagons_orig.pdf"), patchworks$Hex, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_densities_orig.pdf"), patchworks$Density, width = 12, height = 10)
   }
 }
