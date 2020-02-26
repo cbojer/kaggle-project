@@ -13,11 +13,15 @@ library(pbapply)
 library(parallel)
 library(patchwork)
 library(future)
+<<<<<<< HEAD
 library(forecast)
+=======
+>>>>>>> 5bc19f9f58fc3bb7a14131defc399cc59a2b9d2b
 
 source("./R/utils.R")
 ```
 
+<<<<<<< HEAD
 # Read M4 data and inspect frequencies
 ```{r}
 # Read M4 data ------------------------------------------------------------
@@ -26,10 +30,23 @@ M4 <- readRDS("./Cache/processed_training_data/M4DT.RDS")
 
 # Inspect unique frequencies by period
 M4[, unique(lapply(train, frequency)), period]
+=======
+
+# Read M4 data and inspect frequencies
+```{r}
+plan(cluster, workers = 1)
+
+f <- future(source("./Cache/Article_M4_Comparison.R"),
+            globals = "calculate_khs_feats")
+
+resolved(f)
+value(f)
+>>>>>>> 5bc19f9f58fc3bb7a14131defc399cc59a2b9d2b
 ```
 
 # Calculate KHS features with and without seasonality
 ```{r}
+<<<<<<< HEAD
 
 # Setup Cluster
 cl <- makeCluster(detectCores())
@@ -57,11 +74,15 @@ saveRDS(list("M4_adjusted" = M4_adjusted_feats,
         "./Cache/plot_feats.RDS")
 
 
+=======
+rstudioapi::
+>>>>>>> 5bc19f9f58fc3bb7a14131defc399cc59a2b9d2b
 ```
 
 # Visualizing M4 with and without seasonality for Daily and Weekly Series
 
 ```{r}
+<<<<<<< HEAD
 # Read plotting features
 plot_feats <- readRDS("./Cache/plot_feats.RDS")
 M4_adjusted_feats <- plot_feats$M4_adjusted
@@ -71,6 +92,13 @@ rm(plot_feats) ; gc()
 # Construtc plotting functions
 minimal_autoplot <- function(object, colour = NULL, scale = 1, x = 1, y = 2, variance_percentage = TRUE,
                              loadings = FALSE, loadings.label = FALSE, loadings.label.repel = FALSE, alpha = NULL) {
+=======
+
+
+# Construtc plotting functions
+minimal_autoplot <- function(object, colour = NULL, scale = 1, x = 1, y = 2, variance_percentage = TRUE,
+                             loadings = FALSE, loadings.label = FALSE, loadings.label.repel = FALSE) {
+>>>>>>> 5bc19f9f58fc3bb7a14131defc399cc59a2b9d2b
   require(ggfortify)
   plot.data <- ggfortify:::fortify.prcomp(object)
   plot.data$rownames <- rownames(plot.data)
@@ -110,11 +138,19 @@ minimal_autoplot <- function(object, colour = NULL, scale = 1, x = 1, y = 2, var
   xlab <- labs[1]
   ylab <- labs[2]
   if(!is.null(colour)) {
+<<<<<<< HEAD
     p <- ggfortify::ggbiplot(plot.data = plot.data, loadings.data = loadings.data, alpha = alpha,
                              xlab = xlab, ylab = ylab, colour = "colour", loadings = loadings, loadings.label = loadings.label, 
                              loadings.label.repel = loadings.label.repel)
   } else {
     p <- ggfortify::ggbiplot(plot.data = plot.data, loadings.data = loadings.data, alpha = alpha,
+=======
+    p <- ggfortify::ggbiplot(plot.data = plot.data, loadings.data = loadings.data, 
+                             xlab = xlab, ylab = ylab, colour = "colour", loadings = loadings, loadings.label = loadings.label, 
+                             loadings.label.repel = loadings.label.repel)
+  } else {
+    p <- ggfortify::ggbiplot(plot.data = plot.data, loadings.data = loadings.data, 
+>>>>>>> 5bc19f9f58fc3bb7a14131defc399cc59a2b9d2b
                              xlab = xlab, ylab = ylab, loadings = loadings, loadings.label = loadings.label, 
                              loadings.label.repel = loadings.label.repel)
   }
@@ -123,10 +159,17 @@ minimal_autoplot <- function(object, colour = NULL, scale = 1, x = 1, y = 2, var
 }
 
 
+<<<<<<< HEAD
 plot_M4_feats <- function(x, title = "", ...) {
   x %>%
     prcomp(scale = T) %>%
     minimal_autoplot(...) +
+=======
+plot_M4_feats <- function(x, title = "") {
+  x[, -c("N", "Frequency", "Period")] %>%
+    prcomp(scale = T) %>%
+    minimal_autoplot(colour = factor(M4$period, levels = c("Hourly", "Daily", "Weekly", "Monthly", "Quarterly", "Yearly"))) +
+>>>>>>> 5bc19f9f58fc3bb7a14131defc399cc59a2b9d2b
     # Trend and ACF 1 Arrow & Text
     geom_segment(aes(x = -0.010, xend = 0.000, y = 0.006, yend = 0.006),
                  lineend = "round", linejoin = "round", arrow = arrow(type = "closed")) +
@@ -144,12 +187,17 @@ plot_M4_feats <- function(x, title = "", ...) {
 }
 
 # Construct Feature plots for M4 
+<<<<<<< HEAD
 M4_adjusted_plot <- plot_M4_feats(M4_adjusted_feats[, -c("N", "Frequency", "Period")], title = "Adjusted Frequency",
                                   colour = factor(M4$period, levels = c("Hourly", "Daily", "Weekly", "Monthly", "Quarterly", "Yearly")),
                                   alpha = 0.5)
 M4_original_plot <- plot_M4_feats(M4_original_feats[, -c("N", "Frequency", "Period")], title = "Original Frequency", 
                                   colour = factor(M4$period, levels = c("Hourly", "Daily", "Weekly", "Monthly", "Quarterly", "Yearly")),
                                   alpha = 0.5)
+=======
+M4_adjusted_plot <- plot_M4_feats(M4_adjusted_feats, "Adjusted Frequency")
+M4_original_plot <- plot_M4_feats(M4_original_feats, "Original Frequency")
+>>>>>>> 5bc19f9f58fc3bb7a14131defc399cc59a2b9d2b
 
 # Assemble Patchwork with plots
 M4_frequency_plot <- M4_original_plot + M4_adjusted_plot +
@@ -172,8 +220,11 @@ f <- futureCall(
 
 resolved(f)
 
+<<<<<<< HEAD
 ggsave("./Figures/article/M4_frequency_comparison_wide.png", M4_frequency_plot, height = 6, width = 10)
 
+=======
+>>>>>>> 5bc19f9f58fc3bb7a14131defc399cc59a2b9d2b
 ```
 
 

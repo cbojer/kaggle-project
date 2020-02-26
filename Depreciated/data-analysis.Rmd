@@ -36,6 +36,8 @@ tsib <- wm_train %>%
   group_by_key(store, dept) %>%
   tsibble::fill_gaps(weekly_sales = 0)
 
+
+wm_train %>% count(store, dept)
 tsib %>%
   as.tibble() %>% 
   group_by(store, dept) %>%
@@ -442,3 +444,26 @@ full_ds_feat[, ent := future_map(V1, ~safe_spec(.x) %>% as.numeric)]
 
 ```
 
+```{r}
+fread("~/kaggle/recruit-restaurant/sample_submission.csv") %>% mutate(id = str_sub(id, 1, -12)) %>% count(id)
+```
+
+```{r}
+
+air <- fread("~/kaggle/recruit-restaurant/air_store_info.csv") %>% select(air_store_id)
+hpg <- fread("~/kaggle/recruit-restaurant/hpg_store_info.csv") %>% select(hpg_store_id)
+air_hpg <- fread("~/kaggle/recruit-restaurant/store_id_relation.csv")
+hpg %>% left_join(air_hpg) %>% full_join(air)
+```
+
+```{r}
+wm_train 
+```
+
+```{r}
+favorita <- fread("~/kaggle/favorita/train.csv")
+favoritat <- fread("~/kaggle/favorita/test.csv")
+favoritat %>% mutate(date = ymd(date)) %>%  summarize(min(date), max(date))
+```
+  
+  

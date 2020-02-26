@@ -1,4 +1,5 @@
 
+<<<<<<< HEAD
 # Get Information from ZIP file -------------------------------------------
 
 get_zip_info <- function(path) {
@@ -7,6 +8,8 @@ get_zip_info <- function(path) {
   read.table(text = file_info[-c(1,3, n-1, n)], header = TRUE, stringsAsFactors = FALSE)
 }
 
+=======
+>>>>>>> 5bc19f9f58fc3bb7a14131defc399cc59a2b9d2b
 # Get Load ID -------------------------------------------------------------
 
 get_id <- function(path) {
@@ -16,6 +19,7 @@ get_id <- function(path) {
 
 # Trim Leading & Trailing Zero's ------------------------------------------
 
+<<<<<<< HEAD
 trimlt <- function(.data, target = NULL, trim = c("both", "leading", "trailing")) {
   if(inherits(.data, "data.frame") && !is.null(target)) {
     x <- as.data.frame(.data)[, eval(substitute(target))]
@@ -34,6 +38,17 @@ trimlt <- function(.data, target = NULL, trim = c("both", "leading", "trailing")
             both = x[non_zero[1]:non_zero[length(non_zero)]],
             leading = x[non_zero[1]:n],
             trailing = x[1:non_zero[length(non_zero)]])
+=======
+trimlt <- function(.data, target = NULL) {
+  if(inherits(.data, "data.frame") && !is.null(target)) {
+    x <- as.data.frame(.data)[, eval(substitute(target))]
+    non_zero <- which(x > 0)
+    return(.data[non_zero[1]:non_zero[length(non_zero)], ])
+  } else if(is.vector(.data) && is.numeric(.data)) {
+    x <- .data
+    non_zero <- which(x > 0)
+    return(x[non_zero[1]:non_zero[length(non_zero)]])
+>>>>>>> 5bc19f9f58fc3bb7a14131defc399cc59a2b9d2b
   }
 }
 
@@ -128,12 +143,20 @@ calculate_khs_feats <- function(x, use_dw_frequency = TRUE) {
   }
   
   # Calculate Features
+<<<<<<< HEAD
   # Zero values result in error, hence add '0.000001'
   lambda <- try(forecast::BoxCox.lambda(timeseries + 0.000001, lower = 0, upper = 1, method = "loglik")) 
+=======
+  lambda <- try(forecast::BoxCox.lambda(timeseries + 0.000001, lower = 0, upper = 1, method = "loglik")) # Zero values result in error, hence add '0.000001'
+>>>>>>> 5bc19f9f58fc3bb7a14131defc399cc59a2b9d2b
   stl_feats <- try(feasts::feat_stl(timeseries, .period = freq))
   acf_feats <- try(feasts::feat_acf(timeseries, .period = freq))
   spectral_feats <- try(feasts::feat_spectral(timeseries))
   
+<<<<<<< HEAD
+=======
+  
+>>>>>>> 5bc19f9f58fc3bb7a14131defc399cc59a2b9d2b
   # Pull Features of Interest
   if(!is.element("try-error", class(lambda))) {
     lambda <- lambda

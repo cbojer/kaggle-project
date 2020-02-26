@@ -22,13 +22,18 @@ library(qs)
 
 ##### Source Functions #####
 source("./R/utils.R")
+<<<<<<< HEAD
 source("./R/pc_plots.R")
+=======
+source("./R/bulk_list_assembly.R")
+>>>>>>> 5bc19f9f58fc3bb7a14131defc399cc59a2b9d2b
 
 ##### Collect Garbage #####
 invisible(gc())
 
 ```
 
+<<<<<<< HEAD
 # Download Kaggle data
 # To use script you will need to accept competition rules at https://www.kaggle.com/c/<competition-name>/rules.
 ```{r, eval = FALSE}
@@ -59,9 +64,81 @@ restructured_write_path <- "./Data/Restructured/"
 
 ####### Source Batch Assembly Script #######
 rstudioapi::jobRunScript(path = "./Munge/01 - Assemble Kaggle Data to Combined RDS File.R", workingDir = getwd(), importEnv = TRUE)
+=======
+# Method to control script sourcing seperate session
+```{r}
+library(future)
 
-```
+assert_is_list <- function(x, recursive = FALSE) {
+  parent <- deparse(substitute(x, env = parent.frame()))
+  if(!is.list(x)) {
+    stop(sprintf("Failed is.list(%s) : %s must be a list", parent, parent))
+  } 
+  
+  if(isTRUE(recursive)) {
+    child_check <- sapply(x, is.list)
+    child_names <- names(child_check)
+    if(!all(child_check)) {
+      if(!is.null(child_names)) {
+        child_msg <- paste(child_names[!child_check], collapse = ", ")
+        stop(sprintf("Following child names failed is.list() : %s", child_msg))
+      } else {
+        child_msg <- paste(which(child_check == FALSE), collapse = ", ")
+        stop(sprintf("Following child indices failed is.list() : %s", child_msg))
+      }
+      
+    }
+  }
+}
 
+assert_arguments <- function(x) {
+  check_names <- sapply(x, function(xx) names(xx) %in% c("FUN", "args"))
+  if(!all(check_names)) {
+    stop(sprintf("Failed argument check : Arguments must be named 'FUN' and 'args'"))
+  }
+  if(!is.call(xx$FUN)) {
+    stop(sprintf("Failed argument check : Argument 'FUN' must be a call created with 'substitute()'"))
+  }
+  if(is.list(xx$args) &&  !is.null(names(xx$args))) {
+    stop(sprintf("Failed argument check : Argument 'args' must be a named list"))
+  }
+}
+
+future_source <- function(x, workers = 1) {
+  require(future, quietly = TRUE)
+  assert_is_list(x, recursive = T)
+  assert_arguments(x)
+  
+  for(i in seq_along(x)) {
+    
+    writeLines(sprintf("##### %s #####", names(x)[i]))
+    
+    # Create/reset session to run calculations
+    if(i != length(x)) plan(cluster, workers = workers)
+    
+    # Run calculation in session
+    f <- future(x[[i]]$FUN, 
+                substitute = FALSE,
+                globals = x[[i]]$args)
+    
+    # Check if calculation has resolved
+    while(TRUE) {
+      if(!resolved(f)) {
+        Sys.sleep(1)
+      } else {
+        value(f)
+        break()
+      }
+    }
+    
+    # Close return to sequential when all calculations are finished
+    if(i == length(sources)) plan(sequential)
+  }
+}
+>>>>>>> 5bc19f9f58fc3bb7a14131defc399cc59a2b9d2b
+
+
+<<<<<<< HEAD
 # Run Preprocessing Script
 ```{r, eval=FALSE}
 
@@ -127,10 +204,90 @@ all_sbc_classes[, id := dplyr::case_when(id == "favorita-grocery-sales-forecasti
                                          id == "walmart-recruiting-sales-in-stormy-weather" ~ "Walmart Stormy Weather",
                                          id == "web-traffic-time-series-forecasting" ~ "Wikipedia",
                                          TRUE ~ id)]
+=======
+sources <- list(
+  "(1) Prepare Data Information" = list(FUN = substitute(source("./Munge/01 - Preprocess Data.R")),
+                                        args = list(data_info = data_info,
+                                                    processed_training_save_path = "./Cache/processed_training_data/",
+                                                    imputation_method = imputeTS::na_seasplit)),
+  "(X) Extract SBC Classification" = list(FUN = substitute(source("./Munge/04 - Extract SBC Classification.R")),
+                                          args = list(data_info = data_info, 
+                                                      sbc_save_path = "./Results/sbc_class/", 
+                                                      processed_data_paths = list.files("./Cache/processed_training_data/", full.names = T),
+                                                      sbc_classifier = sbc_classifier))
+)
+
+```
+
+# Restructure Kaggle Data from Multiple "XX.CSV" files to Single "Combined.RDS" file 
+```{r, eval=FALSE}
+
+####### Initiate Control Parameters #######
+original_kaggle_data_path <- "../Kaggle Data/"
+
+####### Source Batch Assembly Script #######
+rstudioapi::jobRunScript(path = "./Munge/00 - Assemble Kaggle Data to Combined RDS File.R", workingDir = getwd(), importEnv = TRUE)
+
+```
+
+# Prepare Data Information
+```{r}
+
+####### Prepare Data Information #######
+data_info <-  data.table(
+  id = sapply(paste0(list.dirs("../Kaggle Data")[-1], "/combined.rds"), get_id),
+  data_dir = paste0(list.dirs("../Kaggle Data")[-1], "/combined.rds"),
+  train_data = list("train", "air_visit_data", "train", "train", "train", c("train_1", "train_2")),
+  test_data = c("test", NA, "test", "test", "test", NA),
+  group = list(c("store_nbr", "item_nbr"), c("air_store_id"), c("store"), c("store", "dept"), c("store_nbr", "item_nbr"), c("page")),
+  target = c("unit_sales", "visitors", "sales", "weekly_sales", "units", "views"),
+  index = c("date", "visit_date", "date", "date", "date", "date"),
+  ts_frequency = c(7, 7, 7, 52, 7, 7)
+)
+
+```
+
+# Run Preprocessing Script
+```{r, eval=FALSE}
+
+####### Initiate Control Parameters #######
+processed_training_save_path <- "./Cache/processed_training_data/"
+imputation_method <- imputeTS::na_seasplit
+
+####### Source Preprocessing Script #######
+rstudioapi::jobRunScript(path = "./Munge/01 - Preprocess Data.R", workingDir = getwd(), importEnv = TRUE)
+
+```
+
+# Extract Kang, Hyndman, Smith Features from Kaggle and M Competitions
+```{r, eval = FALSE}
+
+####### Initiate Control Parameters #######
+processed_data_paths <- list.files("./Cache/processed_training_data/", full.names = T)
+khs_feat_save_path <- "./Results/khs_features/"
+khs_retry_save_path <- "./Cache/khs_retry/"
+khs_number_of_retry <- 3
+khs_plot_save_path <- "./Figures/"
+
+####### Extract and Plot KHS Features #######
+
+# With frequency: Daily = 7, Weekly = 52
+adjusted_weekly_daily_frequency <- TRUE
+
+rstudioapi::jobRunScript(path = "./Munge/02 - Extract KHS Features.R", workingDir = getwd(), importEnv = TRUE)
+rstudioapi::jobRunScript(path = "./Munge/03 - Plot KHS Features.R", workingDir = getwd(), importEnv = TRUE)
+
+# With frequency: Daily = 1, Weekly = 1
+adjusted_weekly_daily_frequency <- FALSE
+
+rstudioapi::jobRunScript(path = "./Munge/02 - Extract KHS Features.R", workingDir = getwd(), importEnv = TRUE)
+rstudioapi::jobRunScript(path = "./Munge/03 - Plot KHS Features.R", workingDir = getwd(), importEnv = TRUE)
+>>>>>>> 5bc19f9f58fc3bb7a14131defc399cc59a2b9d2b
 
 # Examine length of failed classifications
 all_sbc_classes[!complete.cases(all_sbc_classes), .(Unique_Length = unique(N), N_Series = .N), id]
 
+<<<<<<< HEAD
 all_sbc_classes[, .("ADI > 1"  = scales::percent(sum(ADI > 1, na.rm = T)/.N, .01)), id]
 ```
 ```{r}
@@ -150,6 +307,43 @@ plot.data$id %>% unique()
 In all cases where classification failed, the series length == 1
 
 ```{r}
+=======
+# SBC Classification
+```{r, eval = FALSE}
+
+####### Initiate Control Parameters #######
+processed_data_paths <- list.files("./Cache/processed_training_data/", full.names = T)
+sbc_save_path <- "./Results/sbc_class/"
+
+####### Source SBC Classification Script #######
+rstudioapi::jobRunScript(path = "./Munge/04 - Extract SBC Classification.R", workingDir = getwd(), importEnv = TRUE)
+
+```
+
+```{r}
+
+sbc_save_path <- "./Results/sbc_class/"
+sbc_plot_save_path <- "./Figures/"
+
+all_sbc_classes <- rbindlist(lapply(list.files(sbc_save_path, full.names = T), readRDS))
+
+all_sbc_classes[, id := dplyr::case_when(id == "favorita-grocery-sales-forecasting" ~ "Corporacion Favorita",
+                                         id == "recruit-restaurant-visitor-forecasting" ~ "Recruit Restaurant",
+                                         id == "rossmann-store-sales" ~ "Rossmann",
+                                         id == "walmart-recruiting-store-sales-forecasting" ~ "Walmart",
+                                         id == "walmart-storm-weather-competition" ~ "Walmart Stormy Weather",
+                                         id == "web-traffic-time-series-forecasting" ~ "Wikipedia",
+                                         TRUE ~ id)]
+
+# Examine length of failed classifications
+all_sbc_classes[!complete.cases(all_sbc_classes), .(Unique_Length = unique(N), N_Series = .N), id]
+
+```
+
+In all cases where classification failed, the series length == 1
+
+```{r}
+>>>>>>> 5bc19f9f58fc3bb7a14131defc399cc59a2b9d2b
 sbc_point_plot <- function(.data) {
   .data[complete.cases(.data)] %>%
     ggplot(aes(ADI, CV2)) +
@@ -160,6 +354,7 @@ sbc_point_plot <- function(.data) {
     facet_wrap(~id)
 }
 
+<<<<<<< HEAD
 sbc_point_plot(all_sbc_classes)
 
 sbc_box_plot <- function(.data) {
@@ -176,6 +371,30 @@ sbc_box_plot <- function(.data) {
 
 sbc_box_plot(all_sbc_classes)
 
+=======
+library(future)
+library(promises)
+
+p %>%
+  then(~{
+    cat("plot complete")
+    print(.)
+  })
+
+sbc_plot(all_sbc_classes)
+
+sbc_box_plot <- function(.data) {
+  .data[complete.cases(.data), ] %>%
+    ggplot(aes(x = 1, y = ADI)) +
+    geom_boxplot() +
+    scale_y_log10() +
+    facet_wrap(~id, scales = "free_y") +
+    theme_bw() +
+    theme(axis.title.x = element_blank()) +
+    labs(y = "Log10( Average Demand Interval )")
+}
+
+>>>>>>> 5bc19f9f58fc3bb7a14131defc399cc59a2b9d2b
 ```
 
 
