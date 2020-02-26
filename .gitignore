@@ -3,3 +3,4 @@
 Cache/
 plots/test.js
 test.js
+Benchmarks/*.csv
