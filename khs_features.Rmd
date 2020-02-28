@@ -18,16 +18,53 @@ library(feasts)
 library(ggfortify)
 library(forecast)
 library(patchwork)
+library(qs)
 
 ##### Source Functions #####
 source("./R/utils.R")
+<<<<<<< HEAD
+source("./R/pc_plots.R")
+=======
 source("./R/bulk_list_assembly.R")
+>>>>>>> 5bc19f9f58fc3bb7a14131defc399cc59a2b9d2b
 
 ##### Collect Garbage #####
 invisible(gc())
 
 ```
 
+<<<<<<< HEAD
+# Download Kaggle data
+# To use script you will need to accept competition rules at https://www.kaggle.com/c/<competition-name>/rules.
+```{r, eval = FALSE}
+if(.Platform$OS.type == "unix") {
+  system("./Munge/00\\ -\\ Download\\ raw\\ kaggle\\ data.sh")
+} else {
+  shell("./Munge/00\\ -\\ Download\\ raw\\ kaggle\\ data.sh")
+}
+
+####### Prepare Data Information #######
+data_info <-  data.table(
+  id = sub(".zip", "", list.files("./Data/Raw_Data")),
+  raw_data_dir = list.files("./Data/Raw_Data", full.names = TRUE),
+  train_data = list("train", "air_visit_data", "train", "train", "train", c("train_1", "train_2")),
+  test_data = c("test", NA, "test", NA, "test", NA),
+  group = list(c("store_nbr", "item_nbr"), c("air_store_id"), c("store"), c("store_nbr", "item_nbr"), c("store", "dept"), c("page")),
+  target = c("unit_sales", "visitors", "sales", "units", "weekly_sales", "views"),
+  index = c("date", "visit_date", "date", "date", "date", "date"),
+  ts_frequency = c(7, 7, 7, 7, 52, 7)
+)
+```
+
+# Restructure Kaggle Data from Multiple "XX.CSV" files to Single "Combined.RDS" file 
+```{r, eval=FALSE}
+
+####### Initiate Control Parameters #######
+restructured_write_path <- "./Data/Restructured/"
+
+####### Source Batch Assembly Script #######
+rstudioapi::jobRunScript(path = "./Munge/01 - Assemble Kaggle Data to Combined RDS File.R", workingDir = getwd(), importEnv = TRUE)
+=======
 # Method to control script sourcing seperate session
 ```{r}
 library(future)
@@ -98,8 +135,76 @@ future_source <- function(x, workers = 1) {
     if(i == length(sources)) plan(sequential)
   }
 }
+>>>>>>> 5bc19f9f58fc3bb7a14131defc399cc59a2b9d2b
 
 
+<<<<<<< HEAD
+# Run Preprocessing Script
+```{r, eval=FALSE}
+
+####### Initiate Control Parameters #######
+data_info[, restructured_data_path := list.files("./Data/Restructured", full.names = T)]
+processed_training_save_path <- "./Data/Processed/"
+imputation_method <- imputeTS::na_seasplit
+
+####### Source Preprocessing Script #######
+rstudioapi::jobRunScript(path = "./Munge/02 - Preprocess Data.R", workingDir = getwd(), importEnv = TRUE)
+
+```
+
+# Extract Kang, Hyndman, Smith Features from Kaggle and M Competitions
+```{r, eval = FALSE}
+
+####### Initiate Control Parameters #######
+processed_data_paths <- list.files("./Data/Processed", full.names = T)
+khs_feat_save_path <- "./Results/khs_features/"
+khs_retry_save_path <- "./Cache/khs_retry/"
+khs_number_of_retry <- 3
+khs_plot_save_path <- "./Figures/"
+# Use adjusted frequency: Daily = 7; Weekly = 52
+adjusted_weekly_daily_frequency <- TRUE
+# Include `Frequency`in prcomp / plot
+include_frequency <- FALSE
+
+####### Extract and Plot KHS Features #######
+rstudioapi::jobRunScript(path = "./Munge/03 - Extract KHS Features.R", workingDir = getwd(), importEnv = TRUE)
+rstudioapi::jobRunScript(path = "./Munge/04 - Plot KHS Features.R", workingDir = getwd(), importEnv = TRUE)
+
+# With frequency: Daily = 1, Weekly = 1
+adjusted_weekly_daily_frequency <- FALSE
+
+rstudioapi::jobRunScript(path = "./Munge/03 - Extract KHS Features.R", workingDir = getwd(), importEnv = TRUE)
+rstudioapi::jobRunScript(path = "./Munge/04 - Plot KHS Features.R", workingDir = getwd(), importEnv = TRUE)
+
+```
+
+# SBC Classification
+```{r, eval = FALSE}
+
+####### Initiate Control Parameters #######
+processed_data_paths <- list.files("./Cache/processed_training_data/", full.names = T)
+sbc_save_path <- "./Results/sbc_class/"
+
+####### Source SBC Classification Script #######
+rstudioapi::jobRunScript(path = "./Munge/05 - Extract SBC Classification.R", workingDir = getwd(), importEnv = TRUE)
+
+```
+
+```{r}
+
+sbc_save_path <- "./Results/sbc_class/"
+sbc_plot_save_path <- "./Figures/"
+
+all_sbc_classes <- rbindlist(lapply(list.files(sbc_save_path, full.names = T), readRDS))
+
+all_sbc_classes[, id := dplyr::case_when(id == "favorita-grocery-sales-forecasting" ~ "Corporacion Favorita",
+                                         id == "recruit-restaurant-visitor-forecasting" ~ "Recruit Restaurant",
+                                         id == "rossmann-store-sales" ~ "Rossmann",
+                                         id == "walmart-recruiting-store-sales-forecasting" ~ "Walmart Store Sales",
+                                         id == "walmart-recruiting-sales-in-stormy-weather" ~ "Walmart Stormy Weather",
+                                         id == "web-traffic-time-series-forecasting" ~ "Wikipedia",
+                                         TRUE ~ id)]
+=======
 sources <- list(
   "(1) Prepare Data Information" = list(FUN = substitute(source("./Munge/01 - Preprocess Data.R")),
                                         args = list(data_info = data_info,
@@ -177,9 +282,32 @@ adjusted_weekly_daily_frequency <- FALSE
 
 rstudioapi::jobRunScript(path = "./Munge/02 - Extract KHS Features.R", workingDir = getwd(), importEnv = TRUE)
 rstudioapi::jobRunScript(path = "./Munge/03 - Plot KHS Features.R", workingDir = getwd(), importEnv = TRUE)
+>>>>>>> 5bc19f9f58fc3bb7a14131defc399cc59a2b9d2b
 
+# Examine length of failed classifications
+all_sbc_classes[!complete.cases(all_sbc_classes), .(Unique_Length = unique(N), N_Series = .N), id]
+
+<<<<<<< HEAD
+all_sbc_classes[, .("ADI > 1"  = scales::percent(sum(ADI > 1, na.rm = T)/.N, .01)), id]
+```
+```{r}
+hex_patchwork <- wrap_plots(a=pc_hex_plots$M3,                    
+                            b=pc_hex_plots$M4,                       
+                            c=pc_hex_plots$`Corporacion Favorita`,
+                            d=pc_hex_plots$`Recruit Restaurant`,  
+                            e=pc_hex_plots$loadings,                 
+                            f=pc_hex_plots$Rossmann,
+                            g=pc_hex_plots$Walmart,               
+                            h=pc_hex_plots$`Walmart Stormy Weather`, 
+                            i=pc_hex_plots$Wikipedia)
+names(pc_hex_plots)
+plot.data$id %>% unique()
 ```
 
+In all cases where classification failed, the series length == 1
+
+```{r}
+=======
 # SBC Classification
 ```{r, eval = FALSE}
 
@@ -215,6 +343,7 @@ all_sbc_classes[!complete.cases(all_sbc_classes), .(Unique_Length = unique(N), N
 In all cases where classification failed, the series length == 1
 
 ```{r}
+>>>>>>> 5bc19f9f58fc3bb7a14131defc399cc59a2b9d2b
 sbc_point_plot <- function(.data) {
   .data[complete.cases(.data)] %>%
     ggplot(aes(ADI, CV2)) +
@@ -225,6 +354,24 @@ sbc_point_plot <- function(.data) {
     facet_wrap(~id)
 }
 
+<<<<<<< HEAD
+sbc_point_plot(all_sbc_classes)
+
+sbc_box_plot <- function(.data) {
+  .data[complete.cases(.data), ] %>%
+    ggplot(aes(x = id, y = ADI)) +
+    geom_boxplot() +
+    scale_y_log10() +
+    #facet_wrap(~id, scales = "free_y") +
+    theme_bw() +
+    theme(axis.title.y = element_blank()) +
+    labs(y = "Log10( Average Demand Interval )") +
+    coord_flip()
+}
+
+sbc_box_plot(all_sbc_classes)
+
+=======
 library(future)
 library(promises)
 
@@ -247,6 +394,7 @@ sbc_box_plot <- function(.data) {
     labs(y = "Log10( Average Demand Interval )")
 }
 
+>>>>>>> 5bc19f9f58fc3bb7a14131defc399cc59a2b9d2b
 ```
 
 

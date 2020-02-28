@@ -1,7 +1,11 @@
 
 # Assemble all files in a folder and save as .RDS list --------------------
 
+<<<<<<< HEAD
+bulk_list_assembly <- function(readpath, writepath, recursive = TRUE, delete_originals = FALSE) {
+=======
 bulk_list_assembly <- function(path, recursive = TRUE, delete_originals = FALSE) {
+>>>>>>> 5bc19f9f58fc3bb7a14131defc399cc59a2b9d2b
   require(data.table, quietly = TRUE)
   
   if(recursive) {
@@ -12,7 +16,11 @@ bulk_list_assembly <- function(path, recursive = TRUE, delete_originals = FALSE)
   }
   
   output <- vector("list", length(folders))
+<<<<<<< HEAD
+  x <- "key.csv.zip"
+=======
   
+>>>>>>> 5bc19f9f58fc3bb7a14131defc399cc59a2b9d2b
   for(i in seq_along(folders)) {
     files <- list.files(paste0(path, "/", folders[i]), pattern = ".csv$", full.names = F)
     file_names <- sub(".csv", "", files)

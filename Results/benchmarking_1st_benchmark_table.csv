@@ -1,0 +1,13 @@
+"Competition","Method","Rel. Error 1st","Rel. Error 50th"
+"Favorita","Naive",0.4,0.41
+"Favorita","SNaive",0.4,0.41
+"Recruit","Naive",0.61,0.63
+"Recruit","SNaive",0.73,0.75
+"Rossmann","Naive",0.17,0.19
+"Rossmann","SNaive",0.26,0.29
+"Walmart","Naive",0.45,0.54
+"Walmart","SNaive",0.73,0.89
+"Walmart Stormy Weather","Naive",0.68,0.73
+"Walmart Stormy Weather","SNaive",0.7,0.75
+"Wikipedia","Naive",0.73,0.82
+"Wikipedia","SNaive",0.7,0.78
