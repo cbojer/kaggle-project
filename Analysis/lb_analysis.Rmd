@@ -16,7 +16,7 @@ lb_data <- map2_dfr(
   c("RossmannLB", "WikiLB", "RecruitLB", "FavoritaLB", "Walmart1LB", "Walmart2LB"),
   c("Rossmann", "Wikipedia", "Recruit", "Favorita", "Walmart1", "Walmart2"),
   ~read_excel(
-    "Writings/Leaderboard.xlsx", 
+    "../Data/Leaderboard.xlsx", 
     sheet = .x,
     col_names = c("place", "pub", "team", "notebook", "members", "score", "entries", "last"), 
     col_types = c("numeric", "text", "text", "text", "text", "numeric", "numeric", "text"),
@@ -28,24 +28,54 @@ lb_data <- map2_dfr(
          score = if_else(comp == "Wikipedia", score / 100000, score))
  
 benchmarks <- read_excel("Benchmarks/benchmarks-perf.xlsx") %>% rename(comp = CompId, score = Score) %>% mutate(place = NA)
+best_benchmarks <- benchmarks %>% group_by(comp) %>% filter(score == min(score)) %>% select(comp, benchmark = score)
 
-lb_data %>% 
-  ggplot(aes(x = place, y = score)) + geom_point() + facet_wrap(~comp, scales = "free_y") +
-  geom_hline(aes(yintercept = score, color = Benchmark), data = benchmarks) +
-  scale_y_log10() +
+lb_plot <- lb_data %>% 
+  filter(place <= 25) %>% 
+  group_by(comp) %>% 
+  mutate(rel_score = score/min(score),
+         pct_worse = (rel_score - 1)) %>% 
+  left_join(best_benchmarks) %>% 
+  mutate(bm_pct_worse = (benchmark / min(score)) - 1,
+         bm_pct_worse = round(bm_pct_worse * 100, 1),
+         bm_y = max(pct_worse)) %>% 
+  ungroup %>% 
+  mutate(
+    comp = case_when(
+      comp == "Favorita" ~ "Corporación Favorita",
+      comp == "Recruit" ~ "Recruit Restaurant",
+      comp == "Walmart1" ~ "Walmart Store Sales",
+      comp == "Walmart2" ~ "Walmart Stormy Weather",
+      TRUE ~ comp
+    )
+  ) %>% 
+  ggplot(aes(x = place, y = pct_worse)) + geom_point() + facet_wrap(~comp, scales = "free_y") +
+  #geom_hline(aes(yintercept = score, color = Benchmark), data = benchmarks) +
+  #scale_y_log10() +
   xlab("Placement") +
-  ylab("Performance difference from Winner (%)")
+  ylab("Score Difference from Winner") +
+  geom_label(aes(x = 4, y = bm_y, label = stringr::str_c("BM: ", bm_pct_worse, "%"))) +
+  coord_cartesian(xlim = c(1, 25)) +
+  scale_x_continuous(breaks = seq(5, 25, by = 5), minor_breaks = NULL) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 0.1)) +
+  theme_bw(base_size = 12)
 
+ggsave("../Figures/lb-plot.pdf", width = 12, height = 10)
 ```
 
-```{r}
 
+
+```{r}
 lb_data %>% 
+  filter(place <= 25) %>% 
   group_by(comp) %>% 
-  mutate(pct_diff = (score - min(score))/score*100) %>% 
-  ggplot(aes(x = place, y = pct_diff)) + geom_point() + facet_wrap(~comp) +
+  left_join(best_benchmarks) %>% 
+  mutate(rel_score = score/benchmark) %>% 
+  ggplot(aes(x = place, y = rel_score)) + geom_point() + facet_wrap(~comp, scales = "free_y") +
+  #geom_hline(aes(yintercept = score, color = Benchmark), data = benchmarks) +
+  #scale_y_log10() +
   xlab("Placement") +
-  ylab("Performance difference from Winner (%)")
+  ylab("Relative Score (compared to Benchmark)")
 
 ```
 
