@@ -12,10 +12,6 @@ file_names <- paste0(data_info$id, ".zip")
 zip_info <- sapply(file_paths, get_zip_info, simplify = FALSE)
 zip_info <- lapply(zip_info, function(x) if(any("Name" %in% names(x))) x[grepl("zip|7z|csv", x$Name), ]) 
 
-# Remove test.csv from Stormy weather competition. This requires password.
-#stormy <- zip_info[[grep("stormy", names(zip_info))]]
-#zip_info[[grep("stormy", names(zip_info))]] <- stormy[!grepl("test", stormy$Name), ]
-
 # Initiate Assembly Loop --------------------------------------------------
 
 for (i in seq_along(file_paths)) {
@@ -52,7 +48,6 @@ for (i in seq_along(file_paths)) {
       if (!inherits(.data, "data.table")) NULL else .data
     }
   })
-
   
   # Correct names
   names(file_data) <- sapply(zip_info[[i]]$Name, function(x) strsplit(x, "\\.")[[1]][1])
