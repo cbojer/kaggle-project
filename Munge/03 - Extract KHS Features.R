@@ -34,14 +34,14 @@ for(idx in 1:nrow(data_info)) {
   if(adjusted_weekly_daily_frequency == TRUE) {
     # Check directory existence
     if(!dir.exists(paste0(khs_feat_save_path, "adjusted/"))) {
-      dir.create(paste0(khs_feat_save_path, "adjusted/"))
+      dir.create(paste0(khs_feat_save_path, "adjusted/"), recursive = TRUE)
     }
     # Define save path
     save_path <- paste0(khs_feat_save_path, "adjusted/", id, ".qs")
   } else {
     # Check directory existence
     if(!dir.exists(paste0(khs_feat_save_path, "original/"))) {
-      dir.create(paste0(khs_feat_save_path, "original/"))
+      dir.create(paste0(khs_feat_save_path, "original/"), recursive = TRUE)
     }
     # Define save path
     save_path <- paste0(khs_feat_save_path, "original/", id, ".qs")
@@ -86,7 +86,7 @@ for(idx in 1:nrow(data_info)) {
     retry_data <- train[incomplete_feats, on = "grp"]
     
     for(retry_i in 1:khs_number_of_retry) {
-      writeLines(sprintf("\n%d groups failed. Running try %d of %d", nrow(incomplete_feats), retry_i, khs_number_of_retry))
+      writeLines(sprintf("\n%d groups failed. Running try %d of %d", nrow(retry_data), retry_i, khs_number_of_retry))
       
       # Establish retry save paths
       if(adjusted_weekly_daily_frequency == TRUE) {
@@ -166,8 +166,6 @@ M3 <- qread(processed_data_paths[grep("M3DT", processed_data_paths)], nthreads =
 M4 <- qread(processed_data_paths[grep("M4DT", processed_data_paths)], nthreads = getDTthreads())
 
 # Extract KHS Features
-
-
 cl <- makeCluster(detectCores() - 1)
 clusterExport(cl, "calculate_khs_feats")
 

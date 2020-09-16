@@ -1,4 +1,14 @@
 
+# Load Packages -----------------------------------------------------------
+
+load_packages <- function(packages, parallel = TRUE) {
+  if(any(!packages %in% installed.packages())) {
+    install.packages(packages[!packages %in% installed.packages()], Ncpus = if(isTRUE(parallel)) parallel::detectCores() else getOption("Ncpus", 1L))
+  }
+  
+  suppressMessages(invisible(sapply(packages, library, character.only = TRUE)))
+}
+
 # Get Information from ZIP file -------------------------------------------
 
 get_zip_info <- function(path) {
@@ -133,7 +143,7 @@ calculate_khs_feats <- function(x, use_dw_frequency = TRUE) {
   stl_feats <- try(feasts::feat_stl(timeseries, .period = freq))
   acf_feats <- try(feasts::feat_acf(timeseries, .period = freq))
   spectral_feats <- try(feasts::feat_spectral(timeseries))
-  
+  feasts::
   # Pull Features of Interest
   if(!is.element("try-error", class(lambda))) {
     lambda <- lambda
@@ -241,4 +251,24 @@ prplot <- function(feats) {
     bind_cols(Period=feats$Period) %>%
     ggplot(aes(x=PC1, y=PC2)) +
     geom_point(aes(col=Period))
+}
+
+
+# Skewness ----------------------------------------------------------------
+
+skewness <- function(x) {
+  xbar <- mean(x,na.rm=TRUE)
+  s <- sd(x,na.rm=TRUE)
+  
+  return(abs(mean((x-xbar)^3,na.rm=TRUE)/s^3))
+}
+
+
+# Kurtosis ----------------------------------------------------------------
+
+kurtosis <- function(x) {
+  xbar <- mean(x,na.rm=TRUE)
+  s <- sd(x,na.rm=TRUE)
+  
+  return(mean((x-xbar)^4,na.rm=TRUE)/s^4)
 }

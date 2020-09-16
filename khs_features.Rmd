@@ -8,28 +8,33 @@ output: document_md
 ##### Clear Environment #####
 rm(list = ls())
 
-##### Load Packages #####
-
-library(magrittr)
-library(data.table)
-library(pbapply)
-library(imputeTS)
-library(feasts)
-library(ggfortify)
-library(forecast)
-library(patchwork)
-library(qs)
-
-
 ##### Source Functions #####
 source("./R/utils.R")
 source("./R/pc_plots.R")
+
+##### Load Packages #####
+
+required_packages <- c("magrittr", "data.table", "pbapply", "imputeTS", "ggfortify", "qs", "feasts", "future")
+
+load_packages(required_packages)
 
 ##### Collect Garbage #####
 invisible(gc())
 
 ```
 
+```{r}
+M4 <- qread(processed_data_paths[grep("M4DT", processed_data_paths)], nthreads = getDTthreads())
+M4[period == "Weekly", ] %>%
+  ggplot(aes(n)) +
+  stat_ecdf() +
+  scale_x_continuous(breaks = seq(0, 3000, 100)) +
+  scale_y_continuous(breaks = seq(0, 1, 0.1)) + 
+  geom_vline(xintercept = 104)
+
+M4[period == "Weekly", sum(n > 104) / .N]
+M4[period == "Daily", sum(n > 365*2) / .N]
+```
 
 # Download Kaggle data
 # To use script you will need to accept competition rules at https://www.kaggle.com/c/<competition-name>/rules.
@@ -76,6 +81,18 @@ rstudioapi::jobRunScript(path = "./Munge/02 - Preprocess Data.R", workingDir = g
 
 ```
 
+# Install ForeCA (Required for estimation of Spectral Entropy)
+```{r, eval=FALSE}
+sapa_url <- "https://cran.r-project.org/src/contrib/Archive/sapa/sapa_2.0-2.tar.gz"
+ifultools_url <- "https://cran.r-project.org/src/contrib/Archive/ifultools/ifultools_2.0-5.tar.gz"
+foreca_url <- "https://cran.r-project.org/src/contrib/Archive/ForeCA/ForeCA_0.2.6.tar.gz"
+install.packages("splus2R")
+install.packages(ifultools_url, repos = NULL)
+install.packages(sapa_url, repos = NULL)
+install.packages(foreca_url, repos = NULL)
+```
+
+
 # Extract Kang, Hyndman, Smith Features from Kaggle and M Competitions
 ```{r, eval = FALSE}
 
@@ -85,10 +102,12 @@ khs_feat_save_path <- "./Results/khs_features/"
 khs_retry_save_path <- "./Cache/khs_retry/"
 khs_number_of_retry <- 3
 khs_plot_save_path <- "./Figures/"
+
+
 # Use adjusted frequency: Daily = 7; Weekly = 52
 adjusted_weekly_daily_frequency <- TRUE
 # Include `Frequency`in prcomp / plot
-include_frequency <- FALSE
+include_frequency <- TRUE
 
 ####### Extract and Plot KHS Features #######
 rstudioapi::jobRunScript(path = "./Munge/03 - Extract KHS Features.R", workingDir = getwd(), importEnv = TRUE)
@@ -96,6 +115,8 @@ rstudioapi::jobRunScript(path = "./Munge/04 - Plot KHS Features.R", workingDir =
 
 # With frequency: Daily = 1, Weekly = 1
 adjusted_weekly_daily_frequency <- FALSE
+# Include `Frequency`in prcomp / plot
+include_frequency <- TRUE
 
 rstudioapi::jobRunScript(path = "./Munge/03 - Extract KHS Features.R", workingDir = getwd(), importEnv = TRUE)
 rstudioapi::jobRunScript(path = "./Munge/04 - Plot KHS Features.R", workingDir = getwd(), importEnv = TRUE)

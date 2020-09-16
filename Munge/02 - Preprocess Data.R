@@ -41,7 +41,6 @@ for(idx in 1:nrow(data_info)) {
   interval <- ifelse(grepl("week", target), "1 week", "1 day")
   save_path <- paste0(processed_training_save_path, id, ".qs")
   
-  # Check if data has already been processed
   
   writeLines(sprintf("(%d) Initiating preprocessing with: %s", idx,  id))
   
@@ -215,7 +214,7 @@ for(idx in 1:nrow(data_info)) {
     }
   }
   
-  # Trim leading & trailing zero's from Train by each Group
+  # Trim leading zero's from Train by each Group (Removing trailing could result in gap between train and test)
   writeLines(sprintf("\t Removing leading zero's from Train"))
   train <- train[, trimlt(.SD, target, trim = "leading"), by = c(group), .SDcols = c(target, index)]
   

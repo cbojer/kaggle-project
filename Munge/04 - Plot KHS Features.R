@@ -86,7 +86,7 @@ unique_cols <- sapply(unique_ids, function(x) {
 #### POINT ####
 point_plots <- sapply(unique_ids, function(x) {
   pc_plot(.data = plot.data, target = x, id_col = "id", bg_id = "M4", 
-          x_lims = plot.xlims, y_lims = plot.ylims,
+          x_lims = plot.xlims, y_lims = plot.ylims, include_legend = FALSE,
           color_scheme = unique_cols, geom_type = "point")
 }, USE.NAMES = TRUE, simplify = FALSE)
 
@@ -94,7 +94,7 @@ point_plots <- sapply(unique_ids, function(x) {
 #### HEXAGON ####
 hexbin_plots <- sapply(unique_ids, function(x) {
   pc_plot(.data = plot.data, target = x, id_col = "id", bg_id = "M4", 
-          x_lims = plot.xlims, y_lims = plot.ylims,
+          x_lims = plot.xlims, y_lims = plot.ylims, include_legend = FALSE,
           color_scheme = unique_cols, geom_type = "hexbin")
 }, USE.NAMES = TRUE, simplify = FALSE)
 
@@ -102,7 +102,7 @@ hexbin_plots <- sapply(unique_ids, function(x) {
 #### DENSITY ####
 density_plots <- sapply(unique_ids, function(x) {
   pc_plot(.data = plot.data, target = x, id_col = "id", bg_id = "M4", 
-          x_lims = plot.xlims, y_lims = plot.ylims,
+          x_lims = plot.xlims, y_lims = plot.ylims, include_legend = FALSE,
           color_scheme = unique_cols, geom_type = "density")
 }, USE.NAMES = TRUE, simplify = FALSE)
 
@@ -139,7 +139,12 @@ loadings <- loading.data %>%
 # Structure Final Plot ----------------------------------------------------
 
 # Define Layout for Plot (Loadings [e] will be placed in the middle)
-layout <- 'yabc \n ydef \n yghi \n xxxx'
+layout <- '
+  yabcz 
+  ydefz
+  yghiz
+  xxxxz
+'
 
 # Calculate Variance Explained by PC's
 var_exp <- pc_obj$sdev^2/sum(pc_obj$sdev^2)
@@ -150,59 +155,64 @@ labs <- paste0(paste0("PC", 1:2), " (", scales::percent(var_exp, accuracy = 0.01
 x_lab <- grid::textGrob(labs[1], hjust = 0.5)
 y_lab <- grid::textGrob(labs[2], rot = 90, vjust = 0.5)
 
-# Construct Patchworks
-patchworks <- lapply(list("Point" = point_plots,
-                          "Hex" = hexbin_plots,
-                          "Density" = density_plots),
-                     function(x) {
-                       wrap_plots(a=x$M3,                    
-                                  b=x$M4,                       
-                                  c=x$`Corporacion Favorita`,
-                                  d=x$`Recruit Restaurant`,  
-                                  e=loadings,                 
-                                  f=x$Rossmann,
-                                  g=x$`Walmart Store Sales`,               
-                                  h=x$`Walmart Stormy Weather`, 
-                                  i=x$Wikipedia,
-                                  x = x_lab, y = y_lab) +
-                         plot_layout(ncol = 4, nrow = 4,
-                                     widths = c(0.1, 1, 1, 1),
-                                     heights = c(1, 1, 1, 0.1), 
-                                     design = layout)
-                     })
+guide <- ggpubr::get_legend(
+  pc_plot(.data = plot.data, target = unique_ids[1], id_col = "id", bg_id = "M4", 
+          x_lims = plot.xlims, y_lims = plot.ylims, include_legend = TRUE,
+          color_scheme = unique_cols, geom_type = "hexbin")
+)
+
+point_patch <- make_patchwork(point_plots, 
+                              x_lab = x_lab, 
+                              y_lab = y_lab, 
+                              loadings = loadings,
+                              layout = gsub("z", "", layout), 
+                              type = "point")
+hex_patch <- make_patchwork(hexbin_plots, 
+                            x_lab = x_lab, 
+                            y_lab = y_lab, 
+                            loadings = loadings, 
+                            layout = layout,
+                            guide = guide, 
+                            type = "hex")
+density_patch <- make_patchwork(density_plots, 
+                                x_lab = x_lab, 
+                                y_lab = y_lab, 
+                                loadings = loadings,
+                                layout = gsub("z", "", layout),
+                                type = "density")
 
 # Save Final Plots --------------------------------------------------------
 
 if(isTRUE(adjusted_weekly_daily_frequency)) {
   if(isTRUE(include_frequency)) {
-    ggsave(paste0(save_path, "khs_feature_point_adj_with_freq.png"), patchworks$Point, width = 12, height = 10)
-    ggsave(paste0(save_path, "khs_feature_hexagons_adj_with_freq.png"), patchworks$Hex, width = 12, height = 10)
-    ggsave(paste0(save_path, "khs_feature_densities_adj_with_freq.png"), patchworks$Density, width = 12, height = 10)
-    ggsave(paste0(save_path, "khs_feature_point_adj_with_freq.pdf"), patchworks$Point, width = 12, height = 10)
-    ggsave(paste0(save_path, "khs_feature_hexagons_adj_with_freq.pdf"), patchworks$Hex, width = 12, height = 10)
-    ggsave(paste0(save_path, "khs_feature_densities_adj_with_freq.pdf"), patchworks$Density, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_point_adj_with_freq.png"), point_patch, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_hexagons_adj_with_freq.png"), hex_patch, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_densities_adj_with_freq.png"), density_patch, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_point_adj_with_freq.pdf"), point_patch, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_hexagons_adj_with_freq.pdf"), hex_patch, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_densities_adj_with_freq.pdf"), density_patch, width = 12, height = 10)
   } else {
-    ggsave(paste0(save_path, "khs_feature_point_adj.png"), patchworks$Point, width = 12, height = 10)
-    ggsave(paste0(save_path, "khs_feature_hexagons_adj.png"), patchworks$Hex, width = 12, height = 10)
-    ggsave(paste0(save_path, "khs_feature_densities_adj.png"), patchworks$Density, width = 12, height = 10)
-    ggsave(paste0(save_path, "khs_feature_point_adj.pdf"), patchworks$Point, width = 12, height = 10)
-    ggsave(paste0(save_path, "khs_feature_hexagons_adj.pdf"), patchworks$Hex, width = 12, height = 10)
-    ggsave(paste0(save_path, "khs_feature_densities_adj.pdf"), patchworks$Density, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_point_adj.png"), point_patch, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_hexagons_adj.png"), hex_patch, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_densities_adj.png"), density_patch, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_point_adj.pdf"), point_patch, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_hexagons_adj.pdf"), hex_patch, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_densities_adj.pdf"), density_patch, width = 12, height = 10)
   }
 } else {
   if(isTRUE(include_frequency)) {
-    ggsave(paste0(save_path, "khs_feature_point_orig_with_freq.png"), patchworks$Point, width = 12, height = 10)
-    ggsave(paste0(save_path, "khs_feature_hexagons_orig_with_freq.png"), patchworks$Hex, width = 12, height = 10)
-    ggsave(paste0(save_path, "khs_feature_densities_orig_with_freq.png"), patchworks$Density, width = 12, height = 10)
-    ggsave(paste0(save_path, "khs_feature_point_orig_with_freq.pdf"), patchworks$Point, width = 12, height = 10)
-    ggsave(paste0(save_path, "khs_feature_hexagons_orig_with_freq.pdf"), patchworks$Hex, width = 12, height = 10)
-    ggsave(paste0(save_path, "khs_feature_densities_orig_with_freq.pdf"), patchworks$Density, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_point_orig_with_freq.png"), point_patch, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_hexagons_orig_with_freq.png"), hex_patch, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_densities_orig_with_freq.png"), density_patch, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_point_orig_with_freq.pdf"), point_patch, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_hexagons_orig_with_freq.pdf"), hex_patch, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_densities_orig_with_freq.pdf"), density_patch, width = 12, height = 10)
   } else {
-    ggsave(paste0(save_path, "khs_feature_point_orig.png"), patchworks$Point, width = 12, height = 10)
-    ggsave(paste0(save_path, "khs_feature_hexagons_orig.png"), patchworks$Hex, width = 12, height = 10)
-    ggsave(paste0(save_path, "khs_feature_densities_orig.png"), patchworks$Density, width = 12, height = 10)
-    ggsave(paste0(save_path, "khs_feature_point_orig.pdf"), patchworks$Point, width = 12, height = 10)
-    ggsave(paste0(save_path, "khs_feature_hexagons_orig.pdf"), patchworks$Hex, width = 12, height = 10)
-    ggsave(paste0(save_path, "khs_feature_densities_orig.pdf"), patchworks$Density, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_point_orig.png"), point_patch, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_hexagons_orig.png"), hex_patch, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_densities_orig.png"), density_patch, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_point_orig.pdf"), point_patch, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_hexagons_orig.pdf"), hex_patch, width = 12, height = 10)
+    ggsave(paste0(save_path, "khs_feature_densities_orig.pdf"), density_patch, width = 12, height = 10)
   }
 }
